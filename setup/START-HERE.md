@@ -1,0 +1,38 @@
+# Set up Minion Board with one prompt
+
+1. Open a **new Cowork session** in the Claude app (or a Claude Code session). It needs to be able to download from GitHub.
+2. Paste the prompt below and send it.
+3. Approve what Claude shows you: the board, the skill save card, and any permission prompts.
+4. Paste the one line it gives you into your Claude settings. That's the only step Claude can't do for you.
+
+```text
+Set up Minion Board for me from https://github.com/smartcreations/minion-board. Follow these steps in order, without rewriting any of the files:
+
+1. Download the repo into your workspace: git clone --depth 1 https://github.com/smartcreations/minion-board
+   (or download board/minion-board.html, skill/SKILL.md and setup/3-claude-code-hooks.md from raw.githubusercontent.com).
+   If you can't reach GitHub, stop and ask me to attach those three files instead.
+2. Publish board/minion-board.html, unchanged, as a new private artifact titled "Minion Board" (icon: board),
+   publishing it from the file on disk. Then give it its database by declaring exactly these capabilities:
+   {"db": {"rules": [{"path": "", "read": "view", "write": "owner"}]}, "user": {}}
+3. Note the artifact's id (slug) and URL. In skill/SKILL.md, replace every BOARD_SLUG with the id and every
+   BOARD_URL with the URL, then propose it to me as a skill named "session-board" so I can save it.
+4. Following that skill, put this very thread on the board: send its go note, then write its card with
+   status "idle" and the summary "Minion Board is set up".
+5. Finish with a short checklist, nothing else:
+   - the board link
+   - "Save the session-board skill on the card above"
+   - this exact line, in a copy box, to paste into Settings, in the personal preferences field:
+     In every thread, use the session-board skill: make its go note the very first tool call of every turn, and update the card's status as the last step of every reply.
+   - one question: do I use Claude Code? If I say yes, give me the prompt from setup/3-claude-code-hooks.md
+     with BOARD_SLUG already replaced by my board id, to paste into a Claude Code session on my computer.
+```
+
+## What happens next
+
+- Every thread shows up on the board the next time you write in it. Nothing is backfilled: Claude can't list your past chats, so old threads join as you come back to them.
+- Open the board in a pinned tab or on your phone. Switch to **World** to see the helpers.
+- Want your own look? After setup, ask Claude to change the board: your logo on the billboard, other room names, another scenery.
+
+## No GitHub access?
+
+Some sessions can't download from GitHub (for example a plain chat). Download [`board/minion-board.html`](../board/minion-board.html), [`skill/SKILL.md`](../skill/SKILL.md) and [`setup/3-claude-code-hooks.md`](3-claude-code-hooks.md), attach them to the chat, and paste the same prompt. Claude uses the attached files instead.
