@@ -168,6 +168,8 @@ body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
 .rcbtn.go{background:#7cc242;color:#14300a}
 .rcbtn.dis{background:#fff;color:#1d2433}
 .rcbtn:active{transform:translateY(2px);box-shadow:none}
+.retire{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding:8px 10px;background:#fff;color:#1d2433;border:2px solid #1d2433;border-radius:4px;font:13px "IBM Plex Sans",system-ui,sans-serif}
+.retire button{all:unset;cursor:pointer;padding:4px 10px;border:2px solid #1d2433;border-radius:3px;font-weight:600;box-shadow:0 2px 0 #1d2433;background:#ffd6d6}
 .pop .card{border-radius:0 10px 10px 0}
 .zoom{position:absolute;top:10px;right:10px;display:flex;gap:4px;z-index:1}
 .zoom button{all:unset;cursor:pointer;min-width:28px;height:28px;padding:0 9px;text-align:center;border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font:600 13px var(--body);backdrop-filter:blur(4px)}
@@ -270,6 +272,10 @@ function assignNames(list){
   NAME_OF = out;
 }
 const nameOf = r => NAME_OF.get(r.id) || NAMES[nameHash(r.id) % NAMES.length];
+// threads go quiet or get deleted, and nothing tells the board: an idle card untouched for a week dozes off and leaves.
+// It comes back the moment its thread writes again.
+const STALE_DAYS = 7;
+const isStale = r => !!r && (r.status === "idle" || r.status === "brainstorm") && !(typeof isUnread === "function" && isUnread(r)) && (Date.now() - Date.parse(r.updatedAt || 0)) > STALE_DAYS*86400000;
 const SURF = {chat:"Chat", cowork:"Cowork", code:"Code"};
 const QUIET_MIN = 4, FRESH_MIN = 2;
 const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -333,7 +339,7 @@ function draw(){
     const m = /^(https:\/\/claude\.ai\/code\/project\/chan_[A-Za-z0-9]+)/.exec(r.link || "");
     if (m && !projectLinks.has(r.project || "")) projectLinks.set(r.project || "", m[1]);
   }
-  const live = rows.filter(r => r.status !== "done");
+  const live = rows.filter(r => r.status !== "done" && !isStale(r));
 
   const counts = {}; live.forEach(r => counts[eff(r)] = (counts[eff(r)]||0)+1);
   $("legend").innerHTML = Object.entries(STATUS).map(([k,S]) =>
@@ -350,7 +356,7 @@ function draw(){
       ${c.arr.map(card).join("")}
     </section>`).join("") : `<div class="empty">No threads yet. Sessions add themselves here as they report status.</div>`;
 
-  const done = rows.filter(r => r.status === "done").sort(byTimeDesc);
+  const done = rows.filter(r => r.status === "done" || isStale(r)).sort(byTimeDesc);
   $("doneSum").textContent = `Done (${done.length})`;
   $("doneList").innerHTML = done.length ? done.map(r => `<div class="drow"><span class="t"><b>${esc(r.project||"")}</b> · ${esc(r.title||r.id)}</span>
     <span class="note">${esc(ago(r.updatedAt))} ago</span><button class="btn" data-del="${esc(r.id)}">Remove</button></div>`).join("") : `<p class="note">Nothing finished yet.</p>`;
@@ -739,7 +745,7 @@ function routeTo(m, dest){ m.dest = dest; m.path = findPath([m.gx, m.gy], dest);
 
 function zoneKey(r){
   if (isUnread(r)) return "reports";
-  if (r.status === "done") return "exit";
+  if (r.status === "done" || isStale(r)) return "exit";
   return ZONE_OF[typeof eff === "function" ? eff(r) : r.status] || "playground";
 }
 let firstSync = true, lastSig = "";
@@ -2129,6 +2135,12 @@ document.getElementById("pop").addEventListener("click", ev => {
   const id = (d && d.dataset.dismiss) || (g2 && g2.dataset.seen);
   if (id) { if (g2) linkOpenedAt = Date.now(); markSeen(id); lastRep = ""; }
 });
+document.getElementById("pop").addEventListener("click", async ev => {
+  const b = ev.target.closest("[data-retire]"); if (!b) return;
+  ev.stopPropagation();
+  try { await db.collection("sessions").doc(b.dataset.retire).update({status:"done", changedBy:"board", updatedAt:new Date().toISOString(), progress:null, next:null, pendingApproval:false}); } catch(e) {}
+  document.getElementById("pop").hidden = true;
+});
 function pick(ev){
   const b = cv.getBoundingClientRect(), px = (ev.clientX - b.left) / (scale*cam.z) + cam.x, py = (ev.clientY - b.top) / (scale*cam.z) + cam.y;
   let best = null, bd = 1e9;
@@ -2223,7 +2235,7 @@ cv.addEventListener("click", ev => {
   const m = hit || pick(ev);
   if (!m) { pop.hidden = true; return; }
   if (m.targetZone === "reports" && m.arrived) { showReportChoice(m, ev); return; }
-  pop.innerHTML = card(m.r);
+  pop.innerHTML = card(m.r) + `<div class="retire"><span>Thread deleted or finished?</span><button type="button" data-retire="${esc(m.id)}">Retire</button></div>`;
   if (isUnread(m.r)) setTimeout(() => { markSeen(m.id); lastRep = ""; }, 1500);
   const b = cv.getBoundingClientRect(), sb = document.getElementById("stage").getBoundingClientRect();
   let left = ev.clientX - sb.left + 12, top = ev.clientY - sb.top - 20;
