@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="minion-board-version" content="1.3.0">
+<meta name="minion-board-version" content="1.3.1">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minion Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -121,6 +121,7 @@ body.immersive .bar,body.immersive #banner,body.immersive .plegend{display:none}
 body.immersive .stage{position:fixed;inset:0;z-index:40;border-radius:0}
 body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
 .reports .x{display:none}
+.reports.min .rp,.reports.min>div:not(.hd){display:none}
 .reports{max-height:calc(100% - 20px);overflow:auto}
 @media (max-width:700px){
   body{padding:8px 10px 24px}
@@ -264,6 +265,8 @@ function markSeen(ids){
   for (const id of [].concat(ids)) { const r = (typeof rows !== "undefined" ? rows : []).find(x => x.id === id); SEEN[id] = Math.max(now, (r && Date.parse(r.updatedAt)) || 0) + 1000; }
   for (const k of Object.keys(SEEN)) if (now - SEEN[k] > 7*86400e3) delete SEEN[k];
   try { localStorage.setItem("sb-seen", JSON.stringify(SEEN)); } catch(e) {}
+  // also keep read state in the board's data, so it survives storage resets and follows you across devices
+  try { if (typeof db !== "undefined" && db) db.collection("seen").doc("all").set({ids: SEEN, at: new Date().toISOString()}).catch(() => {}); } catch(e) {}
   if (typeof render === "function") render();
 }
 function nameHash(s){ let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -423,6 +426,11 @@ setInterval(() => { render(); if (connected) setLive("on","Live · "+clock()); }
     setLive(connected ? "on" : "", connected ? "Live · "+clock() : "Loading…");
     render();
   }, () => { clearTimeout(timer); setLive("err","Disconnected"); $("banner").innerHTML = `<div class="banner">The live connection stopped. Reload the page to reconnect.</div>`; });
+  db.collection("seen").onSnapshot(snap => {
+    let ch = false;
+    for (const d of snap.docs) { const v = (d.data() || {}).ids || {}; for (const k in v) if (typeof v[k] === "number" && !(SEEN[k] >= v[k])) { SEEN[k] = v[k]; ch = true; } }
+    if (ch) { try { localStorage.setItem("sb-seen", JSON.stringify(SEEN)); } catch(e) {} lastRep = ""; render(); }
+  }, () => {});
   // Claude Code hooks drop small event notes in "signals"; the open board applies them to the cards.
   let sigFirst = true;
   db.collection("signals").onSnapshot(snap => {
@@ -568,7 +576,7 @@ const DESKS = [];
 for (const dy of [2.6, 5.3, 8]) for (const dx of [15, 17.6, 20.2]) { DESKS.push([dx, dy]); box(dx, dy, 1.8, .9, 4, "#c99b67", "#a77b4b", "#93693d"); box(dx+.6, dy+.15, .7, .25, 7, "#39404f", "#2b313d", "#222733", "monitor"); }
 // ceo
 box(17,15.3,4,1.4,6,"#7a4a2c","#5e3720","#4e2d19");
-F.push({gx:18.45, gy:14.3, w:.9, d:.3, h:0, kind:"boss", draw: t => drawBoss(t)});
+F.push({gx:18.45, gy:14.3, w:.9, d:.3, h:0, kind:"boss", draw: t => evActor("boss", t, drawBoss)});
 F.push({gx:19.75, gy:15.5, w:1.2, d:.4, h:0, kind:"bossDesk", draw: t => drawBossGear(t)});
 box(20.6,15.5,.5,.5,7,"#5fbf6a","#3f8f49","#33783c","plant");
 // cafeteria
@@ -603,7 +611,7 @@ F.push({gx:-4.05, gy:14.15, w:.55, d:.6, h:4, kind:"toilet", stall:0, walk:true,
 F.push({gx:-4.05, gy:15.35, w:.55, d:.6, h:4, kind:"toilet", stall:1, walk:true, draw: t => drawToilet(1, t)});
 // executive assistant booth, just outside your office door
 box(13.3,11.25,1.6,.14,10,"#c9d3e3","#aab6c9","#97a4b9");
-F.push({gx:13.45, gy:11.45, w:1.3, d:.3, h:0, kind:"assistant", draw: t => drawAssistant(t)});
+F.push({gx:13.45, gy:11.45, w:1.3, d:.3, h:0, kind:"assistant", draw: t => evActor("bot", t, drawAssistant)});
 box(13.4,12.0,1.4,.6,4,"#ece6dc","#cfc5b5","#bdb2a0");
 box(13.95,12.12,.5,.18,6,"#39404f","#2b313d","#222733","asstMonitor");
 box(14.95,11.35,.4,.4,6,"#5fbf6a","#3f8f49","#33783c","plant");
@@ -806,7 +814,7 @@ function sync(){
   drawReports(list);
 }
 let focusProj = null;
-let lastRep = "";
+let lastRep = "", repMin = false, repMinIds = new Set();
 function drawReports(list){
   const un = list.filter(r => isUnread(r)).sort((a,b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   const sig = un.map(r => r.id + r.updatedAt).join("|") + Math.floor(Date.now()/60000);
@@ -815,14 +823,16 @@ function drawReports(list){
   const rb = document.getElementById("repBtn"); rb.hidden = !un.length; document.getElementById("repN").textContent = un.length;
   if (!un.length) { el.hidden = true; el.innerHTML = ""; el.classList.remove("open"); return; }
   el.hidden = false;
-  el.innerHTML = `<div class="hd">📬 Reports <span style="opacity:.7;font-weight:500">${un.length}</span><button id="markAll">Mark all read</button><button class="x" id="repClose" aria-label="Close reports">✕</button></div>` +
+  if (repMin && un.some(r => !repMinIds.has(r.id + r.updatedAt))) repMin = false; // a new report opens it again
+  el.classList.toggle("min", repMin);
+  el.innerHTML = `<div class="hd">📬 Reports <span style="opacity:.7;font-weight:500">${un.length}</span><button id="markAll">Mark all read</button><button class="x" id="repClose" aria-label="${repMin ? "Show reports" : "Hide reports"}">${repMin ? "▾" : "✕"}</button></div>` +
     un.slice(0, 20).map(r => {
       const {href} = linkFor(r), k = eff(r), icon = k === "success" ? "👀" : k === "brainstorm" ? "💭" : "✅";
       const inner = `<span class="ok">${icon}</span><span class="bd"><div class="tt"><span class="nm" style="--c:${projColor.get(r.project || "No project") || "#9ab"}">${esc(nameOf(r))}</span>${esc(r.title || r.id)}</div>${r.summary ? `<div class="sm">${esc(r.summary)}</div>` : ""}</span><span class="ag">${esc(ago(r.updatedAt))}</span>`;
       return href ? `<a class="rp" data-cid="${esc(r.id)}" href="${esc(href)}"${IS_MOBILE ? "" : ` target="_blank" rel="noopener"`}>${inner}</a>` : `<button class="rp" data-cid="${esc(r.id)}" data-copy="${esc(r.title||"")}">${inner}</button>`;
     }).join("") + (un.length > 20 ? `<div style="padding:4px 6px;color:#8f9bb3">+${un.length - 20} more</div>` : "");
   const b = document.getElementById("markAll"); if (b) b.onclick = (e) => { e.stopPropagation(); markSeen(un.map(r => r.id)); lastRep = ""; el.classList.remove("open"); sync(); };
-  const cx = document.getElementById("repClose"); if (cx) cx.onclick = (e) => { e.stopPropagation(); el.classList.remove("open"); };
+  const cx = document.getElementById("repClose"); if (cx) cx.onclick = (e) => { e.stopPropagation(); if (el.classList.contains("open")) { el.classList.remove("open"); return; } repMin = !repMin; repMinIds = new Set(un.map(r => r.id + r.updatedAt)); lastRep = ""; drawReports(list); };
   el.querySelectorAll(".rp").forEach(a => a.addEventListener("click", () => setTimeout(() => el.classList.remove("open"), 80)));
 }
 function drawLegend(projects){
@@ -1898,7 +1908,8 @@ function evStart(kind){
   if (EV || mode !== "world") return;
   kind = EV_KINDS.includes(kind) ? kind : evPick(EV_KINDS);
   const cast = evCast();
-  EV = {kind, t: 0, dur: {quake: 11, macarena: 15, revolt: 16, stampede: 19}[kind], cast: new Set(cast.map(m => m.id)), herd: []};
+  evSound(kind);
+  EV = {kind, t: 0, dur: {quake: 11, macarena: 15, revolt: 16, stampede: 24}[kind], cast: new Set(cast.map(m => m.id)), herd: []};
   for (const m of cast) { m.ev = {bubble: null, fast: 1, next: rnd(0, .4)}; m.sit = false; m.path = []; m.arrived = false; m.cheer = 0; m.brief = 0; }
   if (kind === "macarena") {
     const spots = [];
@@ -1911,8 +1922,9 @@ function evStart(kind){
   if (kind === "stampede") {
     const city = decor === "city";
     const R = city ? {L: RING.L, R: RING.R, B: RING.B, F: RING.F} : {L: X0 - 1.6, R: N + 1.6, B: -1.6, F: N + 1.6};
-    const n = 6 + Math.floor(Math.random() * 5), kinds = ["elephant", "elephant", "rhino", "rhino", "giraffe", "zebra", "zebra"];
-    for (let i = 0; i < n; i++) EV.herd.push({kind: evPick(kinds), s: -i * rnd(1.4, 2.4) - 1, o: city ? rnd(-.7, .7) : rnd(-.5, .5), sp: rnd(4.6, 6), R, ph: rnd(0, 6), alpha: 0});
+    const n = 12 + Math.floor(Math.random() * 7), kinds = ["elephant", "elephant", "rhino", "rhino", "giraffe", "zebra", "zebra"];
+    const SZ = {elephant: [1.8, 2.15], rhino: [1.45, 1.7], giraffe: [1.55, 1.8], zebra: [1.25, 1.5]};
+    for (let i = 0; i < n; i++) { const kd = evPick(kinds); EV.herd.push({kind: kd, sz: rnd(SZ[kd][0], SZ[kd][1]), s: -i * rnd(.9, 1.7) - 1, o: city ? rnd(-.8, .8) : rnd(-.6, .6), sp: rnd(8, 10), R, ph: rnd(0, 6), alpha: 0}); }
     for (const m of cast) { m.ev.bubble = Math.random() < .5 ? "ok" : "ask"; m.ev.fast = 2.4; m.ev.hide = true; }
   }
 }
@@ -1948,10 +1960,10 @@ function evTick(dt){
   }
   if (k === "stampede") {
     for (const a of EV.herd) {
-      a.s += a.sp * dt; a.ph += dt * a.sp * 1.6;
+      a.s += a.sp * dt; a.ph += dt * a.sp * 1.2;
       const P = evLoopLen(a.R, a.o);
       a.alpha = a.s < 0 ? 0 : a.s > P ? Math.max(0, 1 - (a.s - P) / 3) : Math.min(1, a.alpha + dt * 3);
-      if (decor === "city" && a.alpha > .5) { const p = evLoopPt(a.R, a.s, a.o); for (const c of CITY.cars) if (!(c.knocked > 0) && c.pose && Math.hypot(c.pose.gx - p.gx, c.pose.gy - p.gy) < 1.1) { c.knocked = 7; const [x, y] = iso(c.pose.gx, c.pose.gy); puff(x, y - 3, "#9aa3ad", 8, -12); } }
+      if (decor === "city" && a.alpha > .5) { const p = evLoopPt(a.R, a.s, a.o); for (const c of CITY.cars) if (!(c.knocked > 0) && c.pose && Math.hypot(c.pose.gx - p.gx, c.pose.gy - p.gy) < 1.7) { c.knocked = 7; evCrash(); const [x, y] = iso(c.pose.gx, c.pose.gy); puff(x, y - 3, "#9aa3ad", 8, -12); } }
     }
     if (t > 3 && EV.herd.every(a => a.s > evLoopLen(a.R, a.o) + 3)) EV.dur = Math.min(EV.dur, t + 1.5);
   }
@@ -1992,11 +2004,11 @@ function evItems(t){
 }
 function drawAnimal(a, p, t){
   const q = evLoopPt(a.R, a.s + .3, a.o), [x, y0] = iso(p.gx, p.gy), [x2] = iso(q.gx, q.gy), f = x2 >= x ? 1 : -1;
-  const step = reduce ? 0 : Math.round(Math.sin(a.ph) * 1), bob = reduce ? 0 : Math.abs(Math.sin(a.ph)) * .8, y = y0 - bob;
-  g.save(); g.globalAlpha = a.alpha;
-  g.fillStyle = "rgba(0,0,0,.18)"; g.beginPath(); g.ellipse(x, y0 + .3, 6, 1.6, 0, 0, Math.PI * 2); g.fill();
-  const R = (dx, dy, w, h, c) => { g.fillStyle = c; g.fillRect(f > 0 ? x + dx : x - dx - w, y + dy, w, h); };
-  const legs = (xs, top, h, c) => xs.forEach((lx, i) => R(lx, top + ((i % 2 ? step : -step) > 0 ? .8 : 0), 1.4, h - ((i % 2 ? step : -step) > 0 ? .8 : 0), c));
+  const step = reduce ? 0 : Math.round(Math.sin(a.ph)), bob = reduce ? 0 : Math.abs(Math.sin(a.ph)) * .8;
+  g.save(); g.globalAlpha = a.alpha; g.translate(x, y0); g.scale(a.sz * f, a.sz);
+  g.fillStyle = "rgba(0,0,0,.18)"; g.beginPath(); g.ellipse(0, .3, 6, 1.6, 0, 0, Math.PI * 2); g.fill();
+  const R = (dx, dy, w, h, c) => { g.fillStyle = c; g.fillRect(dx, dy - bob, w, h); };
+  const legs = (xs, top, h, c) => xs.forEach((lx, i) => { const up = (i % 2 ? step : -step) > 0 ? .8 : 0; R(lx, top + up, 1.4, h - up, c); });
   if (a.kind === "elephant") {
     legs([-5, -2.5, 1.5, 4], -4.5, 4.5, "#6f7682");
     R(-6, -12, 12, 8, "#8d939e"); R(-6, -12, 12, 1.2, "#a5abb5");
@@ -2043,6 +2055,109 @@ function drawBossHiding(t){
   if (peek) { g.fillStyle = "#1d2433"; g.fillRect(x - 2.6, hy + .6, 2.2, 1); g.fillRect(x + .4, hy + .6, 2.2, 1); }
   BOSS_POS = [x, hy - 3];
   if (!reduce && Math.floor(t * 2) % 2) { g.fillStyle = "#ffffff"; g.fillRect(x + 5, hy - 3, 3.2, 3); g.fillStyle = "#1d2433"; g.fillRect(x + 5.6, hy - 1.8, .5, .5); g.fillRect(x + 6.4, hy - 1.8, .5, .5); g.fillRect(x + 7.2, hy - 1.8, .5, .5); }
+}
+// ---- event sounds (only when sound is on) ----
+function evNoise(d, vol = .05, freq = 400, type = "lowpass", delay = 0){
+  if (!soundOn || !AC) return;
+  const n = Math.max(1, Math.floor(AC.sampleRate * d)), buf = AC.createBuffer(1, n, AC.sampleRate), ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
+  const s = AC.createBufferSource(), f = AC.createBiquadFilter(), gn = AC.createGain(), t0 = AC.currentTime + delay;
+  s.buffer = buf; f.type = type; f.frequency.value = freq;
+  gn.gain.setValueAtTime(.0001, t0); gn.gain.exponentialRampToValueAtTime(vol, t0 + Math.min(.4, d * .2)); gn.gain.exponentialRampToValueAtTime(.0001, t0 + d);
+  s.connect(f).connect(gn).connect(AC.destination); s.start(t0); s.stop(t0 + d + .02);
+}
+const evHz = n => 261.63 * Math.pow(2, n / 12);
+function evSound(kind){
+  if (!soundOn) return; ensureAudio(); if (!AC) return;
+  if (kind === "quake") {
+    evNoise(8.6, .16, 95);
+    for (let i = 0; i < 16; i++) tone(42 + Math.random() * 22, .32, "sine", .1, rnd(.3, 8.6));
+    for (let i = 0; i < 7; i++) tone(1700 + Math.random() * 900, .06, "triangle", .02, rnd(.8, 8.4));
+    tone(660, .15, "triangle", .04, 9.3); tone(440, .35, "triangle", .04, 9.45);
+  } else if (kind === "macarena") {
+    tone(600, .35, "sawtooth", .03, 3.3, -450); evNoise(.3, .05, 1800, "bandpass", 3.3);           // record scratch
+    [2.0, 2.42, 2.84].forEach(d => tone(880, .06, "square", .03, d));
+    // an original little party tune: I-vi-IV-V, one bar per chord, eighth notes at the dance beat
+    const mel = [7,null,7,9, 7,4,null,0, 2,4,5,4, 2,null,-1,null, 7,null,7,9, 12,11,9,7, 5,4,2,4, 0,null,null,null], roots = [0, -3, -7, -5], e = .21;
+    for (let i = 0; i < 43; i++) {
+      const d = 4 + i * e, n = mel[i % mel.length];
+      if (n !== null) tone(evHz(n + 12), e * .9, "square", .022, d);
+      if (i % 2 === 0) tone(evHz(roots[Math.floor(i / 8) % 4] - 12), e * 1.6, "triangle", .06, d);
+      evNoise(.03, .012, 7000, "highpass", d);
+    }
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, .16, "square", .035, 13.1 + i * .09));
+  } else if (kind === "revolt") {
+    tone(2300, .22, "sine", .05, .3, 400); tone(2300, .35, "sine", .05, .6, 400);                 // whistle
+    for (let d = 2; d < 14; d += .5) { evNoise(.12, .08, 200, "lowpass", d); tone(68, .12, "sine", .08, d); }
+    for (let d = 3; d < 13; d += 2) { tone(330, .22, "sawtooth", .02, d); tone(392, .32, "sawtooth", .02, d + .28); }
+    tone(420, .7, "sawtooth", .03, 14.2, -300);
+  } else if (kind === "stampede") {
+    tone(300, .7, "sawtooth", .05, .4, 520); tone(340, .9, "sawtooth", .04, 1.2, 600);              // trumpets
+    evNoise(14, .1, 140, "lowpass", .9);
+    for (let d = 1; d < 15; d += .14) tone(52 + Math.random() * 16, .08, "sine", .06, d);           // hooves
+    tone(820, .45, "square", .03, 1.3, -660);                                                       // robot falls over
+  }
+}
+function evCrash(){
+  if (!EV || EV.t - (EV.lc || -9) < .25) return; EV.lc = EV.t;
+  evNoise(.35, .09, 1200, "highpass"); tone(180, .22, "square", .03, 0, -120); tone(1400 + Math.random() * 600, .08, "triangle", .02, .05);
+}
+// ---- your avatar and the robot react too ----
+const EV_ACT = {boss: {at: [18.9, 14.75], head: null}, bot: {at: [14.1, 11.72], head: null}};
+const EV_LINES = {
+  quake: [["boss", 1.2, 5, "Is this the big one?!"], ["bot", 5, 8.6, "RECALIBRATING… ⚙️"], ["boss", 9.4, 11, "…everyone OK?"]],
+  macarena: [["boss", .8, 3.6, "Wait… is that my song?"], ["bot", 4.6, 8.2, "DANCE.EXE LOADED"], ["boss", 9, 12.6, "Still got it 😎"]],
+  revolt: [["bot", 2, 6, "ROBOTS TOO! ✊"], ["boss", 6.5, 10.5, "I'm not here…"], ["boss", 12.6, 15.4, "FINE! Pizza Friday!"]],
+  stampede: [["boss", 1.8, 6, "NOT MY PARKING SPOT!"], ["bot", 6.5, 11, "ERROR 404: ELEPHANT"], ["bot", 15, 17.5, "…rebooting"]]
+};
+function evActor(who, t, fn){
+  if (!EV) { fn(t); return; }
+  const A = EV_ACT[who], [x, y] = iso(A.at[0], A.at[1]), k = EV.kind, T = EV.t;
+  let dx = 0, dy = 0, rot = 0, flip = 1;
+  if (!reduce) {
+    if (k === "quake" && T < 9) { dx = Math.sin(T * 40) * 1.1; dy = -Math.abs(Math.sin(T * 9)) * (who === "boss" ? 3 : 2); if (who === "bot") flip = Math.floor(T * 6) % 2 ? -1 : 1; }
+    if (k === "macarena" && T > 4 && T < 13) { const bt = (T - 4) / .42; dy = -Math.abs(Math.sin(bt * Math.PI)) * 2.5; if (who === "boss") flip = Math.floor(bt / 4) % 2 ? -1 : 1; else rot = Math.floor(bt) % 2 ? .12 : -.12; }
+    if (k === "revolt" && who === "bot" && T > 1.5 && T < 14) dy = -Math.abs(Math.sin(T * 5)) * 1.5;
+    if (k === "stampede" && T > 1 && T < 17) { if (who === "boss") { dy = -6 - Math.abs(Math.sin(T * 14)) * 2; dx = Math.sin(T * 30) * .6; } else rot = -Math.PI / 2 * Math.min(1, (T - 1) * 3) * (T > 15 ? Math.max(0, (17 - T) / 2) : 1); }
+  }
+  g.save(); g.translate(x + dx, y + dy); if (rot) g.rotate(rot); if (flip < 0) g.scale(-1, 1); g.translate(-x, -y);
+  fn(t); evActorExtras(who, t, x, y); g.restore();
+  A.head = who === "boss" ? (BOSS_POS ? [BOSS_POS[0] + dx, BOSS_POS[1] + dy] : [x, y - 33]) : (rot < -1 ? [x - 18, y - 8] : [x + dx, y + dy - 24]);
+}
+function evSign(px, py, text){
+  g.save(); g.font = '2.6px "Press Start 2P", ui-monospace, monospace'; g.textBaseline = "middle"; g.textAlign = "center";
+  const w = Math.min(28, g.measureText(text).width + 3);
+  g.fillStyle = "#1d2433"; g.fillRect(px - w/2 - .6, py - 4.6, w + 1.2, 5.2); g.fillStyle = "#fff8e8"; g.fillRect(px - w/2, py - 4, w, 4);
+  g.fillStyle = "#c2185b"; g.fillText(text, px + .4, py - 1.9, w - 1.5); g.restore();
+}
+function evActorExtras(who, t, x, y){
+  const k = EV.kind, T = EV.t, blink = Math.floor(t * 8) % 2;
+  if (who === "bot") {
+    const fy = Math.round(y * 2) / 2 - 20.5; // top of the face screen
+    if (k === "quake" && T < 9) { for (let i = 0; i < 4; i++) { g.fillStyle = evPick(["#ff3b6b", "#7cf29a", "#4cc6f0", "#ffd23f", "#ffffff"]); g.fillRect(x - 4 + Math.random() * 7, fy + Math.random() * 4.6, rnd(.6, 3), .6); } if (Math.random() < .05) puff(x + rnd(-4, 4), fy - 1, "#ffd23f", 2, -10); }
+    if (k === "macarena" && T > 4 && T < 13) { g.globalAlpha = .55; g.fillStyle = ["#ff3b6b", "#ffd23f", "#7cf29a", "#4cc6f0"][Math.floor(T / .21) % 4]; g.fillRect(x - 4, fy, 8, 5.2); g.globalAlpha = 1; }
+    if (k === "revolt" && T > 1.5 && T < 14) {
+      g.fillStyle = "#ff3b3b"; g.fillRect(x - 3, fy + 2, 2, 1); g.fillRect(x + 1, fy + 2, 2, 1); g.fillRect(x - 3.2, fy + .8, 1.2, .6); g.fillRect(x + 2, fy + .8, 1.2, .6);
+      const pump = reduce ? 0 : Math.round(Math.abs(Math.sin(T * 5)) * 2), px = x + 7, py = fy - 5 - pump;
+      g.fillStyle = "#8b5a3c"; g.fillRect(px, py, .9, 14); evSign(px, py, "ROBOTS TOO");
+    }
+    if (k === "stampede" && T > 1.5 && T < 15.5) for (let i = 0; i < 3; i++) { const a2 = t * 5 + i * 2.1; g.fillStyle = "#ffd23f"; g.fillRect(x + Math.cos(a2) * 4 - .5, fy - 3 + Math.sin(a2) * 1.2, 1.2, 1.2); }
+  } else {
+    const hy = Math.round(y * 2) / 2 - 31; // top of the hair
+    if (blink && ((k === "quake" && T < 9.5) || (k === "stampede" && T > 1 && T < 16))) { g.fillStyle = "#7DB4FF"; g.fillRect(x + 5, hy + 4, 1, 1.5); g.fillRect(x - 6, hy + 6, 1, 1.5); }
+    if (k === "macarena" && T > 4 && T < 13) {
+      const pose = Math.floor((T - 4) / .42) % 4;
+      g.fillStyle = "#1F2A3A"; if (pose !== 3) g.fillRect(x - 8.5, hy + 4, 2, 7); if (pose !== 2) g.fillRect(x + 6.5, hy + 4, 2, 7);
+      g.fillStyle = "#f0c39b"; if (pose !== 3) g.fillRect(x - 8.5, hy + 2.5, 2, 1.5); if (pose !== 2) g.fillRect(x + 6.5, hy + 2.5, 2, 1.5);
+    }
+    if (k === "revolt" && T > 2 && T < 15) { // a white flag waves from behind the desk
+      const [fx, fy0] = iso(18.95, 15.2), wave = reduce ? 0 : Math.sin(t * 6), py = fy0 - 24;
+      g.fillStyle = "#8b5a3c"; g.fillRect(fx + 5, py, .8, 12); g.fillStyle = "#ffffff"; g.fillRect(fx + 5.8, py + (wave > 0 ? 0 : .5), 5, 3); g.fillRect(fx + 10.8, py + (wave > 0 ? .5 : 1), 1.2, 2);
+    }
+  }
+}
+function evSpeech(){
+  for (const [who, a, b, txt] of EV_LINES[EV.kind] || []) if (EV.t >= a && EV.t < b && EV_ACT[who].head) speech(EV_ACT[who].head[0], EV_ACT[who].head[1], txt, who === "boss");
 }
 // toolbar menu
 function evMenuInit(){
@@ -2212,6 +2327,7 @@ function draw(t){
   ctx.setTransform(k, 0, 0, k, -cam.x*k, -cam.y*k);
   ctx.drawImage(low, 0, 0, W, H);
   ctx.globalAlpha = 1;
+  if (EV) evSpeech();
   // briefing dialogue
   for (const m of crew.values()) {
     if (!(m.brief > 0) || !m.screen) continue;

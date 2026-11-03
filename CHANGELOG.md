@@ -10,6 +10,23 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.3.1
+
+**Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
+
+- Events have sounds when sound is on: a rumble for the earthquake, an original party tune for the Macarena, drums and chants for the revolution, and hooves, trumpets and crashes for the stampede.
+- Your avatar and the robot react to every event with moves and a speech line. During the earthquake they shake and the robot glitches. They dance to the Macarena. In the revolution the robot joins the protest and the boss waves a white flag from behind the desk. In the stampede the boss jumps on his chair and the robot falls over, dizzy.
+- The stampede is bigger: 12–18 larger animals that run faster and hit more cars.
+- Reports panel: the ✕ now folds the panel on desktop (▾ opens it again, and a new report opens it). Before, it did nothing on desktop.
+- Reports panel: "Mark all read" now saves in the board's data (a `seen` document) as well as the browser, so read reports stay read after the browser's storage is cleared and on your other devices.
+
+**Upgrade notes for Claude**
+- Board: in the events block, scale animals (`sz` per animal, drawn with translate/scale), use 12–18 animals at speed 8–10, a 24 s cap, a 1.7 knock radius, and call `evCrash()` on a hit.
+- Board: add `evNoise`, `evSound(kind)` (called from `evStart`), `evCrash`, and the actor reactions: `evActor(who, t, fn)` wraps the boss and robot draw calls in the furniture list, `evActorExtras` draws their props, `evSpeech()` runs before the briefing dialogue in `draw`, with lines in `EV_LINES`.
+- Board: in `markSeen`, also write `seen/all` as `{ids, at}`; subscribe to the `seen` collection and merge newer timestamps into the local read state.
+- Board: in `drawReports`, add the `repMin` fold state, the `.reports.min` CSS rule, and make the close button fold or unfold the panel when the phone overlay isn't open.
+- Skill and preference: no change beyond the version line.
+
 ## 1.3.0
 
 **Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
