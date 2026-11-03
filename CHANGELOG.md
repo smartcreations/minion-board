@@ -10,6 +10,21 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.2.1
+
+**Files:** `skill/SKILL.md` (and the version stamp in `board/minion-board.html`)
+
+- A thread that resolves itself because the work has ended now marks its card `done`, so its helper goes home instead of staying idle.
+- The end-of-turn write retries once on `version_mismatch` (the board may have applied the go note in between).
+
+**Upgrade notes for Claude**
+- Skill, statuses table: the `done` row becomes "When the user says the thread is finished, or whenever you resolve the thread (for example with `set_thread_resolved`) because the work has ended. Delivering output alone never makes a thread done; resolving it does."
+- Skill, "When to write" step 3: if the thread was resolved this turn, the final status is `done` (never `idle` or `review`) and `next` is removed. In the card fields table, `next` is also removed for `done`.
+- Skill, rules of thumb: an acknowledgement ("thanks", "ok") means `idle`, unless the thread is resolved in that turn, which means `done`.
+- Skill: add a fourth "failure that matters": a resolved thread whose card isn't `done`.
+- Skill, "The go note": add that the end-of-turn `merge` may return `version_mismatch` because the board applied the go note after the `db_get`; read the card again and retry once.
+- Board: only the version stamp changes to 1.2.1. Preference: no change.
+
 ## 1.2.0
 
 **Files:** `board/minion-board.html`, `skill/SKILL.md`, `setup/UPDATE.md` (new), `CHANGELOG.md` (new)

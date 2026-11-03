@@ -5,14 +5,15 @@ description: "ALWAYS use at the start and at the end of EVERY turn, in every thr
 
 # Minion Board (session board)
 
-Minion Board skill, version 1.2.0. Keep this line: the update prompt reads it.
+Minion Board skill, version 1.2.1. Keep this line: the update prompt reads it.
 
 the user keeps one live board of all their Claude threads across Projects, Cowork and Claude Code. Each thread keeps its own card up to date. The board has two views: project columns, and an isometric "world" where each thread is a named little helper that walks between rooms by status (planning, workshop, their office, report desk, cafeteria, playground, triage). Tapping a card or helper opens its thread, so every card needs a `link` (or, for Claude Code sessions, a `ccSession`) whenever one can be found.
 
-Three failures matter most:
+Four failures matter most:
 1. A card that still says "waiting" after the user has answered and the thread is already working again. The very first thing you do in a turn is fix the card (see "When to write").
 2. A card that says "working" while the thread is really waiting on them (for example on an "Allow once" permission prompt).
 3. A card that asks for their attention when nothing is actually pending.
+4. A thread that resolved itself (for example with `set_thread_resolved`) whose card isn't `done`: its helper never goes home.
 
 Nothing is backfilled. A thread gets its card the first time the user takes a turn in it after this skill exists, including old threads they come back to. If this thread has no card yet, create it this turn.
 
@@ -44,14 +45,14 @@ Cowork sessions and regular chats don't run hooks; everything below applies to t
 | `working` | orange, spinning gear, workshop | You're in the middle of a turn. |
 | `brainstorm` | purple, thought bubble, planning room | The thread is in an exploratory back-and-forth: ideas, options, planning, nothing concrete in progress. |
 | `idle` | grey, playground | **The default** for ongoing work with nothing specific pending: you've done what was asked, and the thread is waiting for the user's next test, feedback or idea. |
-| `done` | collapsed / walks out the exit | **Only** when the user says the thread is finished ("done", "we're done here", "drop it"). Delivering output never makes a thread done. The card comes back as soon as they write in the thread again. |
+| `done` | collapsed / walks out the exit | When the user says the thread is finished ("done", "we're done here", "drop it"), or whenever you resolve the thread (for example with `set_thread_resolved`) because the work has ended. Delivering output alone never makes a thread done; resolving it does. The card comes back as soon as they write in the thread again. |
 
 The board treats any turn that just finished (`idle`, `review`, `brainstorm`) as an unread report until the user has looked at it: the helper celebrates, walks to the report desk and reads out your `summary`. So always end a turn with a clear one-line `summary` of what you did or found.
 
 Rules of thumb:
 - When unsure between `review` and `idle`, choose `idle`. When unsure between `waiting` and `idle`, ask yourself whether you literally can't continue without them; if you can, it's `idle`.
 - Optional suggestions ("want me to also fix X?") don't make a thread `waiting`. Put them in `summary`, not `next`, and set `idle` (or `review` if a deliverable also went out).
-- When the user's message just acknowledges ("looks good", "thanks", "ok"), set `idle`.
+- When the user's message just acknowledges ("looks good", "thanks", "ok"), set `idle`, unless you resolve the thread in that turn, which means `done`.
 - Older cards may still hold `approval`, `success` or `idea`. The board shows them as Needs you, Ready to review and Has an idea. Don't write those values any more.
 
 ### First card for an existing thread
@@ -108,7 +109,7 @@ When you have no earlier board write to look at (an old thread the user just reo
 | `project` | Short project name as the user would say it: "Website", "Side project", "Home admin", "Claude setup". Use the Claude Project's name when there is one, spelled the same way every time: the board makes one column and one helper color per exact name. For Claude Code, replace the hooks' folder-name placeholder with the real project name. |
 | `title` | The session's own name if it has one (see above), else a distinctive 3 to 7 word title. |
 | `status` | One of the statuses above. |
-| `next` | One short line shown on the card, only for `error`, `waiting` and `review`: what failed, what you need from them, or what to look at. Remove it (`{"__delete__": true}`) for `idle`, `brainstorm` and `working`. |
+| `next` | One short line shown on the card, only for `error`, `waiting` and `review`: what failed, what you need from them, or what to look at. Remove it (`{"__delete__": true}`) for `idle`, `brainstorm`, `working` and `done`. |
 | `summary` | One line on what this turn did or found, including any optional suggestion. The board reads it out at the report desk. |
 | `progress` | Only while `working`: a short marker such as "step 3 of 6" or "running tests". Delete it when the turn ends. |
 | `pendingApproval`, `pendingSince`, `pendingStep` | The permission-prompt flag (see above). `pendingSince` is an ISO time (UTC). |
@@ -123,7 +124,7 @@ When you have no earlier board write to look at (an old thread the user just reo
 
 1. **First tool call of every turn: the "go" note.** Before reading files, searching, thinking it through, or anything else, send the go note described in "The go note" below. It's a single write with no read first, so it lands in seconds. Do this on every turn, short or long, and above all when the user is answering a `waiting` or `review` card: on the board, that's the moment their helper gets its orders and leaves their office. Only skip it for a pure one-line reply with no tool calls at all, or in Claude Code sessions with hooks.
 2. **During the turn.** In sessions without hooks, follow "Permission prompts" above. In all sessions, heartbeat at least every 3 minutes of activity and switch to `waiting` the moment you're blocked.
-3. **Last tool call of every turn.** Create the card if it doesn't exist; otherwise update it. Set the final status by the rules above, set or remove `next` to match, write a clear one-line `summary`, update `updatedAt`, delete `progress`, and set `pendingApproval: false`. Then give your reply.
+3. **Last tool call of every turn.** Create the card if it doesn't exist; otherwise update it. Set the final status by the rules above (if you resolved the thread this turn, for example with `set_thread_resolved`, the final status is `done`, never `idle` or `review`, and `next` is removed), set or remove `next` to match, write a clear one-line `summary`, update `updatedAt`, delete `progress`, and set `pendingApproval: false`. Then give your reply.
 
 ## The go note
 
@@ -136,6 +137,7 @@ The go note flips the card to Working with one write and no read: it creates a s
 - `card`, `event` and `at` are required. Add `project`, `title`, `link` and `surface` when you know them; the board only uses them if the card doesn't exist yet.
 - Use the same card id rules as below. The `<unix seconds>` suffix keeps each note new, so `set` never collides.
 - If `db_write` is deferred, load it with ToolSearch in that same first step, then send the note right away.
+- The open board can apply your go note after your `db_get`, so the end-of-turn `merge` may come back `version_mismatch`. Read the card again and retry once.
 - The go note doesn't replace the end-of-turn write. Do the end-of-turn write with `db_get` and `merge` as usual. If the card doesn't exist yet at the end of the turn (the board wasn't open to create it), create it then with `set`.
 
 ## How to write
