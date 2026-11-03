@@ -1,6 +1,6 @@
 ---
 name: "session-board"
-description: "Report this thread's status (working, waiting on the user, ready to review, idle, error, brainstorming) to the user's live Minion Board artifact. Use as the first step of every turn, before commands that may need their permission, and at the end of every reply."
+description: "ALWAYS use at the start and at the end of EVERY turn, in every thread: send the board go note as the very first tool call, and update this thread's card status as the very last step. Also before commands that may need permission."
 ---
 
 # Minion Board (session board)

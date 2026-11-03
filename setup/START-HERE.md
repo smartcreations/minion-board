@@ -3,7 +3,7 @@
 1. Open a **new Cowork session** in the Claude app (or a Claude Code session). It needs to be able to download from GitHub.
 2. Paste the prompt below and send it.
 3. Approve what Claude shows you: the board, the skill save card, and any permission prompts.
-4. Paste the one line it gives you into your Claude settings. That's the only step Claude can't do for you.
+4. Paste the one line it gives you into your Claude settings (and, ideally, each Project's instructions). That's the only step Claude can't do for you.
 
 ```text
 Set up Minion Board for me from https://github.com/smartcreations/minion-board. Follow these steps in order, without rewriting any of the files:
@@ -21,13 +21,16 @@ Set up Minion Board for me from https://github.com/smartcreations/minion-board. 
 5. Finish with a short checklist, nothing else:
    - the board link
    - "Save the session-board skill on the card above"
-   - this exact line, in a copy box, to paste into Settings, in the personal preferences field:
-     In every thread, use the session-board skill: make its go note the very first tool call of every turn, and update the card's status as the last step of every reply.
+   - this line, in a copy box, with BOARD_SLUG replaced by my board id, to paste into Settings, in the personal preferences field:
+     Every turn, before anything else, call mcp__claude-artifacts__db_write with slug BOARD_SLUG and one op: set "signals/<card-id>-go-<unix seconds>" with data {card: <card-id>, event: "prompt", at: <now, ISO UTC>}, where card-id is this thread's session or thread id (see the session-board skill). As the very last step of every reply, update this thread's card status using the session-board skill.
+   - one tip: paste the same line into each Claude Project's instructions too, so it's in front of every thread twice.
    - one question: do I use Claude Code? If I say yes, give me the prompt from setup/3-claude-code-hooks.md
      with BOARD_SLUG already replaced by my board id, to paste into a Claude Code session on my computer.
 ```
 
 ## What happens next
+
+- Why the preference line spells out the exact first call: a thread that has to remember a skill skips it now and then, but a line in your preferences is in front of every turn. In Claude Code, the optional hooks make status exact no matter what.
 
 - Every thread shows up on the board the next time you write in it. Nothing is backfilled: Claude can't list your past chats, so old threads join as you come back to them.
 - Open the board in a pinned tab or on your phone. Switch to **World** to see the helpers.
