@@ -5,7 +5,7 @@ description: "ALWAYS use at the start and at the end of EVERY turn, in every thr
 
 # Minion Board (session board)
 
-Minion Board skill, version 1.2.1. Keep this line: the update prompt reads it.
+Minion Board skill, version 1.2.2. Keep this line: the update prompt reads it.
 
 the user keeps one live board of all their Claude threads across Projects, Cowork and Claude Code. Each thread keeps its own card up to date. The board has two views: project columns, and an isometric "world" where each thread is a named little helper that walks between rooms by status (planning, workshop, their office, report desk, cafeteria, playground, triage). Tapping a card or helper opens its thread, so every card needs a `link` (or, for Claude Code sessions, a `ccSession`) whenever one can be found.
 

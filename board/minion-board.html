@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="minion-board-version" content="1.2.1">
+<meta name="minion-board-version" content="1.2.2">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minion Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -162,6 +162,8 @@ body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
 #fsBack{all:unset;position:absolute;left:50%;transform:translateX(-50%);bottom:max(14px, env(safe-area-inset-bottom));z-index:3;cursor:pointer;background:#fff;color:#1d2433;border:3px solid #1d2433;border-radius:4px;box-shadow:0 3px 0 #1d2433;padding:8px 14px;font:600 14px "IBM Plex Sans",system-ui,sans-serif}
 #fsBack[hidden]{display:none}
 .rchoice{background:#fff;color:#1d2433;border:3px solid #1d2433;border-radius:4px;padding:10px 12px 12px;box-shadow:inset 0 -3px 0 #dfe4ec;font:14px/1.35 "IBM Plex Sans",system-ui,sans-serif;width:260px}
+.rchoice .rcp{display:flex;align-items:center;gap:6px;font:600 12px "IBM Plex Sans",system-ui,sans-serif;margin-bottom:3px;text-transform:none}
+.rchoice .rcp i{width:9px;height:9px;border-radius:2px;border:1.5px solid #1d2433;display:inline-block}
 .rchoice .rct{font-size:13px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rchoice .rcs{font-size:14px;margin-bottom:10px}
 .rchoice .rcb{display:flex;gap:8px}
@@ -173,10 +175,10 @@ body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
 .retire button{all:unset;cursor:pointer;padding:4px 10px;border:2px solid #1d2433;border-radius:3px;font-weight:600;box-shadow:0 2px 0 #1d2433;background:#ffd6d6}
 .pop .card{border-radius:0 10px 10px 0}
 .zoom{position:absolute;top:10px;right:10px;display:flex;gap:4px;z-index:1}
-.zoom button{all:unset;cursor:pointer;min-width:28px;height:28px;padding:0 9px;text-align:center;border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font:600 13px var(--body);backdrop-filter:blur(4px)}
-.zoom select{all:unset;cursor:pointer;height:28px;padding:0 9px;border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font:600 13px var(--body)}
+.zoom button{all:unset;cursor:pointer;min-width:28px;height:28px;line-height:28px;padding:0 9px;text-align:center;border-radius:8px;background:rgba(20,24,34,.68);color:#fff;font:600 13px var(--body);backdrop-filter:blur(4px)}
+.zoom select{all:unset;cursor:pointer;height:28px;line-height:28px;padding:0 9px;border-radius:8px;background:rgba(20,24,34,.68);color:#fff;font:600 13px/28px var(--body);backdrop-filter:blur(4px)}
 .zoom select option{color:#111}
-.zoom button:hover{background:rgba(255,255,255,.22)}
+.zoom button:hover,.zoom select:hover{background:rgba(20,24,34,.85)}
 .zoom button:focus-visible{outline:2px solid #fff}
 .reports{position:absolute;top:10px;left:10px;width:300px;max-width:calc(100% - 20px);z-index:1;background:rgba(18,22,32,.9);color:#fff;border-radius:12px;padding:8px;font-size:12.5px;backdrop-filter:blur(4px)}
 .reports .hd{display:flex;align-items:center;gap:8px;padding:2px 4px 6px;font-weight:600}
@@ -2123,7 +2125,8 @@ setInterval(() => {
 function worldPt(ev){ const b = cv.getBoundingClientRect(); return [(ev.clientX - b.left) / (scale*cam.z) + cam.x, (ev.clientY - b.top) / (scale*cam.z) + cam.y]; }
 function showReportChoice(m, ev){
   const {href} = linkFor(m.r), name = esc(nameOf(m.r)), title = esc(m.r.title || ""), sum = esc(m.r.summary || "");
-  pop.innerHTML = `<div class="rchoice"><div class="rct"><b>${name}</b> · ${title}</div><div class="rcs">${sum}</div><div class="rcb">` +
+  const pj = m.r.project || "No project", pc = projColor.get(pj) || "#888";
+  pop.innerHTML = `<div class="rchoice"><div class="rcp"><i style="background:${pc}"></i><span style="color:${shade(pc, .7)}">${esc(pj)}</span></div><div class="rct"><b>${name}</b> · ${title}</div><div class="rcs">${sum}</div><div class="rcb">` +
     (href ? `<a class="rcbtn go" href="${esc(href)}"${IS_MOBILE ? "" : ' target="_blank" rel="noopener"'} data-seen="${esc(m.id)}">Open thread</a>` : "") +
     `<button class="rcbtn dis" data-dismiss="${esc(m.id)}">Dismiss</button></div></div>`;
   const sb = document.getElementById("stage").getBoundingClientRect();

@@ -10,6 +10,18 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.2.2
+
+**Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
+
+- The report popup (Open thread / Dismiss) shows the project name with its color above the helper's name.
+- The map toolbar buttons and the scenery menu use a dark background for contrast, and the menu text is vertically centered.
+
+**Upgrade notes for Claude**
+- Board: in the report choice popup, add a first line with a small square in the project's color and the project name.
+- Board: give `.zoom button` and `.zoom select` a dark translucent background (about rgba(20,24,34,.68), darker on hover) and a 28px line height so their text is centered.
+- Skill and preference: no change beyond the version line.
+
 ## 1.2.1
 
 **Files:** `skill/SKILL.md` (and the version stamp in `board/minion-board.html`)
