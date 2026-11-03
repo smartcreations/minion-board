@@ -48,6 +48,10 @@ Using Claude Code too? The same prompt offers the optional hooks for exact live 
 
 Each person builds their own board inside their own Claude account, so your threads and data never leave it.
 
+## Updating
+
+Your board and skill are copies in your own account, so new releases don't reach you automatically. To update, paste the prompt in **[setup/UPDATE.md](setup/UPDATE.md)** into a new Cowork session. Claude checks your version, merges the release into your board and skill while keeping your own edits, and tells you if the preference line changed. See **[CHANGELOG.md](CHANGELOG.md)** for what each release adds.
+
 ## What's in this repo
 
 | Path | What it is |
@@ -55,6 +59,8 @@ Each person builds their own board inside their own Claude account, so your thre
 | `board/minion-board.html` | The board page. Claude publishes it, unchanged, as your artifact. |
 | `skill/SKILL.md` | The skill template. Claude fills in your board id during setup. |
 | `setup/START-HERE.md` | The one setup prompt. |
+| `setup/UPDATE.md` | The update prompt, plus how to cut a release. |
+| `CHANGELOG.md`, `VERSION` | Release history with upgrade notes, and the current version. |
 | `setup/3-claude-code-hooks.md` | Optional Claude Code hooks, offered during setup. |
 | `docs/` | Screenshots. |
 
