@@ -10,6 +10,24 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.3.0
+
+**Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
+
+- New 🎲 **Events** button in the world toolbar with four random little shows. Each one plays once (11–19 s), with randomized casts, paths and timings, then everyone goes back to their room:
+  - 🌋 **Earthquake**: the map shakes, helpers panic and run around, dust flies, then things settle.
+  - 💃 **Macarena**: helpers line up in the Workshop and dance in sync, with arm moves and music notes.
+  - ✊ **Revolution**: helpers march into your office with angry faces and protest signs; the boss hides behind the desk.
+  - 🐘 **Stampede**: a herd of elephants, rhinos, giraffes and zebras runs one lap around the city ring road (or the platform edge in other sceneries), knocks cars over (smoke, traffic jam), and leaves. Helpers run indoors.
+- Real status always wins: a helper whose thread changes state leaves the event right away.
+- With reduced motion, the screen does not shake; everything else still plays.
+- The code is one self-contained block (`/* city events */`) plus a few one-line hooks, so it is easy to remove or extend.
+
+**Upgrade notes for Claude**
+- Board: add the events block from `board/minion-board.html` (between the `city events` comments) and its hooks: the 🎲 button and `#evMenu` panel with its CSS; `evTick(dt)` in `update`; `evHelper` before the brief check in the per-helper loop; event speed in the walk step; skip `arrive` and zone routing while `m.ev` is set; call `evRelease(m)` where a helper's target zone changes; event bubble override at the top of `bubbleSpec` plus the `angry` glyph and fill; `evDrawExtras` in the helper drawing; the boss hiding check in `drawBoss`; the lane jam in the car loop; `evItems` in the draw list; the shake offset in the main draw transform.
+- If you renamed rooms, adjust `EV_ZONES`, `EV_INDOOR` and the Workshop and your-office coordinates in the events block.
+- Skill and preference: no change beyond the version line.
+
 ## 1.2.2
 
 **Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)

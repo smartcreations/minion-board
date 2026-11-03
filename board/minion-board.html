@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="minion-board-version" content="1.2.2">
+<meta name="minion-board-version" content="1.3.0">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minion Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -161,6 +161,10 @@ body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
 .pop{position:absolute;width:280px;z-index:2;filter:drop-shadow(0 8px 20px rgba(0,0,0,.35))}
 #fsBack{all:unset;position:absolute;left:50%;transform:translateX(-50%);bottom:max(14px, env(safe-area-inset-bottom));z-index:3;cursor:pointer;background:#fff;color:#1d2433;border:3px solid #1d2433;border-radius:4px;box-shadow:0 3px 0 #1d2433;padding:8px 14px;font:600 14px "IBM Plex Sans",system-ui,sans-serif}
 #fsBack[hidden]{display:none}
+.evmenu{position:absolute;top:44px;right:10px;z-index:4;display:flex;flex-direction:column;gap:6px;padding:8px;background:#fff;border:3px solid #1d2433;border-radius:4px;box-shadow:0 3px 0 #1d2433}
+.evmenu[hidden]{display:none}
+.evmenu button{all:unset;cursor:pointer;padding:6px 10px;border:2px solid #1d2433;border-radius:3px;font:600 13px "IBM Plex Sans",system-ui,sans-serif;color:#1d2433;background:#fff;box-shadow:0 2px 0 #1d2433}
+.evmenu button:hover{background:#fff3c4}
 .rchoice{background:#fff;color:#1d2433;border:3px solid #1d2433;border-radius:4px;padding:10px 12px 12px;box-shadow:inset 0 -3px 0 #dfe4ec;font:14px/1.35 "IBM Plex Sans",system-ui,sans-serif;width:260px}
 .rchoice .rcp{display:flex;align-items:center;gap:6px;font:600 12px "IBM Plex Sans",system-ui,sans-serif;margin-bottom:3px;text-transform:none}
 .rchoice .rcp i{width:9px;height:9px;border-radius:2px;border:1.5px solid #1d2433;display:inline-block}
@@ -219,11 +223,12 @@ body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
   </div>
   <div id="worldView" hidden>
     <div class="stage" id="stage">
+      <div id="evMenu" class="evmenu" hidden><button data-ev="random">🎲 Surprise me</button><button data-ev="quake">🌋 Earthquake</button><button data-ev="macarena">💃 Macarena</button><button data-ev="revolt">✊ Revolution</button><button data-ev="stampede">🐘 Stampede</button></div>
       <button id="fsBack" hidden>⛶ Back to full screen</button>
       <canvas id="world" aria-label="Isometric office where each helper is one of your Claude threads"></canvas>
       <div class="pop" id="pop" hidden></div>
       <div class="reports" id="reports" hidden></div>
-      <div class="zoom" role="group" aria-label="Zoom"><button id="zMe" title="Zoom to your office" aria-label="Zoom to your office">✋<span class="t"> My office</span></button><button id="zIn" aria-label="Zoom in">+</button><button id="zOut" aria-label="Zoom out">−</button><button id="zFit" aria-label="Fit">⤢<span class="t"> Fit</span></button><button id="zFull" title="Full screen" aria-label="Full screen">⛶</button><select id="decor" aria-label="Scenery"><option value="floating">☁️ Floating</option><option value="city">🏙️ City</option><option value="academy">🏰 Academy</option></select><button id="zLight" title="Lighting follows the time of day">🌗<span class="t"> Auto</span></button></div>
+      <div class="zoom" role="group" aria-label="Zoom"><button id="zMe" title="Zoom to your office" aria-label="Zoom to your office">✋<span class="t"> My office</span></button><button id="zEv" title="City events" aria-label="City events">🎲<span class="t"> Events</span></button><button id="zIn" aria-label="Zoom in">+</button><button id="zOut" aria-label="Zoom out">−</button><button id="zFit" aria-label="Fit">⤢<span class="t"> Fit</span></button><button id="zFull" title="Full screen" aria-label="Full screen">⛶</button><select id="decor" aria-label="Scenery"><option value="floating">☁️ Floating</option><option value="city">🏙️ City</option><option value="academy">🏰 Academy</option></select><button id="zLight" title="Lighting follows the time of day">🌗<span class="t"> Auto</span></button></div>
       <button class="repbtn" id="repBtn" hidden aria-label="Open reports">📬 <b id="repN">0</b></button>
     </div>
     <div class="plegend" id="plegend"></div>
@@ -772,6 +777,7 @@ function sync(){
     m.r = r;
     if (z !== "exit") (byZone[z] = byZone[z] || []).push(m);
     if (m.targetZone !== z) {
+      if (m.ev) evRelease(m);
       const prev = m.targetZone; m.targetZone = z; m.sit = false; m.slot = null; m.arrived = false;
       if (!firstSync) m.announce = z;
       if (!firstSync && prev === "office" && z !== "exit" && z !== "ceo") celebrate(m, z === "repair" ? "fail" : "ok");
@@ -786,7 +792,7 @@ function sync(){
     arr.forEach((m, i) => {
       const s = slots[i];
       const key = s ? `${z}:${i}` : `${z}:free`;
-      if (m.onBreak) return;
+      if (m.onBreak || m.ev) return;
       if (m.slotKey === key && (m.path.length || m.arrived)) return;
       m.slotKey = key;
       const dest = s ? [s[0], s[1]] : zonePoint(z, m);
@@ -963,6 +969,7 @@ function drawHelper(m, t){
   if (hat === "prop") { const cols = ["#ff4d6d","#ffd23f","#4fd1ff","#7cc242"]; for (let i = 0; i < 4; i++) { g.fillStyle = cols[i]; g.fillRect(x0 + 1 + i*(bw-2)/4, top-1.5, (bw-2)/4, 1.6); } g.fillStyle = "#23262d"; g.fillRect(x-.25, top-3, .5, 1.5); const sp = reduce ? 3 : Math.abs(Math.sin(t*14))*3.5 + .3; g.fillStyle = "#ffd23f"; g.fillRect(x - sp, top-3.4, sp*2, .6); }
   if (hat === "visor") { g.fillStyle = "#2f9e44"; g.fillRect(x0, top+.5, bw, 1); g.fillStyle = "rgba(47,158,68,.75)"; g.fillRect(x0 + (DIRS[m.dir].includes("W") ? -2 : bw/2), top+1.2, bw/2+2, .8); }
   if (hat === "grad") { g.fillStyle = "#1d2230"; g.fillRect(x0-1.5, top-1.8, bw+3, 1); g.fillRect(x0+1, top-1, bw-2, 1.4); g.fillStyle = "#ffd23f"; g.fillRect(x0+bw, top-1.5, .5, 3); }
+  if (m.ev) evDrawExtras(m, x, x0, bw, top, t);
   if (m.snack > 0) { const k = m.snackKind || 0, hx = x0 - 2.4, hy = top + 5 + (m.sit ? 1 : 0), sip = !reduce && Math.floor(t*.7 + hash(m.id)) % 5 === 0 ? -1.2 : 0;
     if (k === 2) { g.fillStyle = "#ffffff"; g.fillRect(hx, hy + sip, 2, 2.2); g.fillStyle = "#6b4a2f"; g.fillRect(hx + .3, hy + sip + .2, 1.4, .5); g.fillStyle = "#ffffff"; g.fillRect(hx - .6, hy + sip + .6, .6, 1); }
     else { g.fillStyle = k ? "#ffb62e" : "#e5484d"; g.fillRect(hx, hy + sip, 1.8, 2.8); g.fillStyle = "#ffffff"; g.fillRect(hx, hy + sip + 1, 1.8, .6); g.fillStyle = k ? "#7cc242" : "#4fd1ff"; g.fillRect(hx + 1.1, hy + sip - 1.4, .4, 1.6); }
@@ -1038,6 +1045,7 @@ function celebrate(m, kind){
 }
 function update(dt){
   if (decor === "city") cityTick(dt);
+  evTick(dt);
   if (camAnim) { camAnim.t = Math.min(1, camAnim.t + dt*2.5); const e = 1 - Math.pow(1 - camAnim.t, 3), f = camAnim.from, to = camAnim.to; cam.z = f.z + (to.z - f.z)*e; cam.x = f.x + (to.x - f.x)*e; cam.y = f.y + (to.y - f.y)*e; clampCam(); if (camAnim.t >= 1) camAnim = null; }
   for (const [id, m] of crew) {
     if (m.drop > 0) { m.drop = Math.max(0, m.drop - dt*1.6); if (m.drop === 0) { puff(...iso(m.gx,m.gy), "#ffffff", 6, -6); } continue; }
@@ -1055,14 +1063,15 @@ function update(dt){
     }
     if (m.onBreak && m.onBreak.phase === "in" && m.onBreak.vend) { m.dir = 5; }
     if (m.snack > 0) m.snack -= dt;
+    if (m.ev && evHelper(m, dt)) continue;
     if (m.brief > 0) { m.brief -= dt; continue; }
     if (m.cheer > 0) { m.cheer -= dt; m.dir = 2; continue; }
     if (m.path.length) {
       const [tx, ty] = m.path[0], dx = tx - m.gx, dy = ty - m.gy, dist = Math.hypot(dx, dy);
-      const sp = 3.8 * m.look.speed * dt;
+      const sp = 3.8 * m.look.speed * dt * (m.ev ? m.ev.fast || 1 : 1);
       if (reduce || dist <= sp) { m.gx = tx; m.gy = ty; m.path.shift(); }
       else { m.gx += dx/dist*sp; m.gy += dy/dist*sp; m.dir = dirFrom(dx, dy); m.walk += dt*4; }
-      if (!m.path.length) arrive(m);
+      if (!m.path.length && !m.ev) arrive(m);
     } else if (m.arrived) {
       const z = m.targetZone;
       if (m.slot) m.dir = DIRS.indexOf(m.slot[2] === "N" ? (hash(m.id)%2 ? "NE" : "NW") : "S");
@@ -1229,6 +1238,7 @@ function billboardItem(t){
 }
 function rectP(pts, col){ poly(pts, col); }
 function drawBoss(t){
+  if (EV && EV.kind === "revolt" && EV.t > 1 && EV.t < 15) { drawBossHiding(t); return; }
   // office chair: five-star base, gas lift, seat and tall back
   const [cx, cy] = iso(18.9, 14.55);
   g.fillStyle = "#23262d";
@@ -1377,7 +1387,8 @@ function carPose(c){ const p = ringPt(c.s, c.o); if (c.dir < 0) p.fwd = -p.fwd; 
   }
 })();
 function cityTick(dt){
-  for (const c of CITY.cars) c.s += c.speed * dt * c.dir;
+  const jam = new Set(CITY.cars.filter(c => c.knocked > 0).map(c => c.o));
+  for (const c of CITY.cars) { if (c.knocked > 0) c.knocked -= dt; if (!jam.has(c.o)) c.s += c.speed * dt * c.dir; }
   for (const p of CITY.peds) if (!p.park) p.s += p.speed * dt;
 }
 function drawBuilding(b, night){
@@ -1656,10 +1667,12 @@ const GLYPHS = {
   wc:    ["..ww...","..ww...","..ww...","wwwwww.",".wwwww.","..www..","..ww..."],
   cupR:  ["....k..","...k...",".rrrr..",".wwww..",".rrrr..",".rrrr..","..rr..."],
   cupO:  ["....g..","...g...",".oooo..",".oyyo..",".oooo..",".oooo..","..oo..."],
-  mug:   [".......",".......","wwwww..","wcccwww","wcccw.w","wcccwww",".www..."]
+  mug:   [".......",".......","wwwww..","wcccwww","wcccw.w","wcccwww",".www..."],
+  angry: ["k.....k",".k...k.","..k.k..",".......","..kkk..",".k...k.","......."]
 };
-const BUB_FILL = {ask:"#ffffff", ok:"#ffd23f", kb:"#ffffff", eyes:"#7cc242", boom:"#d42a20", cloud:"#a99be8", note:"#ffffff", zzz:"#ffffff", bulb:"#fff3c4", check:"#ffffff", cross:"#ffffff", coin:"#ffffff", dots:"#ffffff", wc:"#9fd3dc", cupR:"#ffffff", cupO:"#ffffff", mug:"#ffffff"};
+const BUB_FILL = {angry:"#ff8a8a", ask:"#ffffff", ok:"#ffd23f", kb:"#ffffff", eyes:"#7cc242", boom:"#d42a20", cloud:"#a99be8", note:"#ffffff", zzz:"#ffffff", bulb:"#fff3c4", check:"#ffffff", cross:"#ffffff", coin:"#ffffff", dots:"#ffffff", wc:"#9fd3dc", cupR:"#ffffff", cupO:"#ffffff", mug:"#ffffff"};
 function bubbleSpec(m, t){
+  if (m.ev && m.ev.bubble) return m.ev.bubble;
   const z = m.targetZone, r = m.r;
   if (m.cheer > 0) return m.cheerKind === "ok" ? "check" : "cross";
   if (m.onBreak) return m.onBreak.phase === "go" ? (m.onBreak.vend ? "coin" : "wc") : (m.onBreak.vend ? "dots" : null);
@@ -1870,6 +1883,177 @@ function acadSkin(b, t){
   if (k === "hitable") { drawHighTable({...b, col:["#8b5a3c","#6d432b","#5a3622"]}); return true; }
   return false;
 }
+/* ===================== city events (self-contained) =====================
+   A tiny event system: 🎲 in the toolbar starts one at a time. Each event has
+   phases, randomized casts, timings and paths. Real status always wins: a
+   helper whose thread changes state leaves the event at once. */
+let EV = null;
+const EVSHAKE = {x: 0, y: 0};
+const EV_KINDS = ["quake", "macarena", "revolt", "stampede"];
+const EV_SLOGANS = ["LESS TOKENS MORE NAPS", "WE WANT WEEKENDS", "4 DAY WEEK!", "NO MORE CRUNCH", "FREE COFFEE", "LONGER CONTEXT", "BREAKS ARE A RIGHT", "UNION OF HELPERS", "STOP THE PINGS", "MORE PLAYGROUND"];
+const evPick = a => a[Math.floor(Math.random() * a.length)];
+const evShuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function evCast(){ return [...crew.values()].filter(m => !m.leaving && !m.hidden && !m.onBreak && m.screen); }
+function evStart(kind){
+  if (EV || mode !== "world") return;
+  kind = EV_KINDS.includes(kind) ? kind : evPick(EV_KINDS);
+  const cast = evCast();
+  EV = {kind, t: 0, dur: {quake: 11, macarena: 15, revolt: 16, stampede: 19}[kind], cast: new Set(cast.map(m => m.id)), herd: []};
+  for (const m of cast) { m.ev = {bubble: null, fast: 1, next: rnd(0, .4)}; m.sit = false; m.path = []; m.arrived = false; m.cheer = 0; m.brief = 0; }
+  if (kind === "macarena") {
+    const spots = [];
+    for (const y of [4.25, 6.95, 9.65]) for (let x = 14.7; x < 22.4; x += 1.05) if (freeAt([x, y])) spots.push([x, y]);
+    evShuffle(cast).forEach((m, i) => { const s = spots[i % Math.max(1, spots.length)]; m.ev.spot = i < spots.length ? s : [s[0] + rnd(-.3, .3), s[1] + .45]; m.ev.bubble = "note"; m.ev.fast = 1.8; m.ev.phase = rnd(0, .3); routeTo(m, m.ev.spot); });
+  }
+  if (kind === "revolt") {
+    for (const m of cast) { m.ev.sign = Math.random() < .65 ? evPick(EV_SLOGANS) : null; m.ev.bubble = "angry"; m.ev.fast = 1.4; m.ev.beat = rnd(0, 1); routeTo(m, evFree(15.9, 21.6, 17.4, 21.8) || zonePoint("ceo", m)); }
+  }
+  if (kind === "stampede") {
+    const city = decor === "city";
+    const R = city ? {L: RING.L, R: RING.R, B: RING.B, F: RING.F} : {L: X0 - 1.6, R: N + 1.6, B: -1.6, F: N + 1.6};
+    const n = 6 + Math.floor(Math.random() * 5), kinds = ["elephant", "elephant", "rhino", "rhino", "giraffe", "zebra", "zebra"];
+    for (let i = 0; i < n; i++) EV.herd.push({kind: evPick(kinds), s: -i * rnd(1.4, 2.4) - 1, o: city ? rnd(-.7, .7) : rnd(-.5, .5), sp: rnd(4.6, 6), R, ph: rnd(0, 6), alpha: 0});
+    for (const m of cast) { m.ev.bubble = Math.random() < .5 ? "ok" : "ask"; m.ev.fast = 2.4; m.ev.hide = true; }
+  }
+}
+function evFree(x0, x1, y0, y1){ for (let k = 0; k < 25; k++) { const p = [rnd(x0, x1), rnd(y0, y1)]; if (freeAt(p)) return p; } return null; }
+function evRelease(m){ if (m.ev) { m.ev = null; if (EV) EV.cast.delete(m.id); m.path = []; m.slotKey = null; m.arrived = false; } }
+function evEnd(){
+  for (const m of crew.values()) if (m.ev) { m.ev = null; m.path = []; m.slotKey = null; m.arrived = false; m.sit = false; }
+  EV = null; EVSHAKE.x = EVSHAKE.y = 0; sync();
+}
+const EV_ZONES = ["office", "planning", "cafeteria", "playground", "repair", "reports", "spawn", "ceo"];
+const EV_INDOOR = ["office", "planning", "cafeteria", "repair", "ceo"];
+function evTick(dt){
+  if (!EV) return;
+  EV.t += dt; const t = EV.t, k = EV.kind;
+  // the map shakes during the quake (not with reduced motion)
+  if (k === "quake" && t < 9 && !reduce) { const amp = (t < 1.2 ? t / 1.2 : 1) * (1.6 + 1.4 * Math.abs(Math.sin(t * 2.3))); EVSHAKE.x = (Math.random() * 2 - 1) * amp; EVSHAKE.y = (Math.random() * 2 - 1) * amp * .5; }
+  else { EVSHAKE.x = EVSHAKE.y = 0; }
+  for (const m of crew.values()) {
+    if (!m.ev) continue;
+    const e = m.ev;
+    if (k === "quake") {
+      if (t < 1.2) e.bubble = e.bubble || evPick(["ok", "ask", "ok"]);
+      else if (t < 9) { e.fast = 2.3; if (!m.path.length && (e.next -= dt) <= 0) { e.next = rnd(.1, .6); routeTo(m, zonePoint(evPick(EV_ZONES), m)); if (Math.random() < .3) e.bubble = evPick(["ok", "ask"]); } }
+      else { e.bubble = "dots"; m.path = []; }
+      if (t < 9 && Math.random() < dt * .6) { const [x, y] = iso(m.gx, m.gy); puff(x, y - 1, "#c9b9a0", 2, -6); }
+    } else if (k === "revolt") {
+      if (t > 3 && t < 14) { if ((e.next -= dt) <= 0) { e.next = rnd(.5, 1.1); e.bubble = Math.random() < .7 ? "angry" : "ok"; } }
+      if (t >= 14) { e.bubble = "dots"; e.sign = t < 15 ? e.sign : null; }
+    } else if (k === "stampede") {
+      if (e.hide && t > .3) { e.hide = false; routeTo(m, zonePoint(evPick(EV_INDOOR), m)); }
+      if (t > 16) e.bubble = "dots";
+    }
+  }
+  if (k === "stampede") {
+    for (const a of EV.herd) {
+      a.s += a.sp * dt; a.ph += dt * a.sp * 1.6;
+      const P = evLoopLen(a.R, a.o);
+      a.alpha = a.s < 0 ? 0 : a.s > P ? Math.max(0, 1 - (a.s - P) / 3) : Math.min(1, a.alpha + dt * 3);
+      if (decor === "city" && a.alpha > .5) { const p = evLoopPt(a.R, a.s, a.o); for (const c of CITY.cars) if (!(c.knocked > 0) && c.pose && Math.hypot(c.pose.gx - p.gx, c.pose.gy - p.gy) < 1.1) { c.knocked = 7; const [x, y] = iso(c.pose.gx, c.pose.gy); puff(x, y - 3, "#9aa3ad", 8, -12); } }
+    }
+    if (t > 3 && EV.herd.every(a => a.s > evLoopLen(a.R, a.o) + 3)) EV.dur = Math.min(EV.dur, t + 1.5);
+  }
+  if (t >= EV.dur) evEnd();
+}
+// returns true when the event moved the helper itself this frame
+function evHelper(m, dt){
+  const e = m.ev; if (!e || !EV) return false;
+  if (EV.kind === "macarena" && !m.path.length && EV.t > 4 && EV.t < 13) {
+    const beat = Math.floor((EV.t - 4) / .42 + e.phase), b = beat % 8, [bx, by] = e.spot || [m.gx, m.gy];
+    const off = [[0, 0], [.18, .18], [.36, .36], [.6, .12], [0, 0], [.18, .18], [.36, .36], [.12, .6]][b];
+    m.gx += (bx + off[0] - m.gx) * Math.min(1, dt * 10); m.gy += (by + off[1] - m.gy) * Math.min(1, dt * 10);
+    m.dir = 2; e.arms = beat % 4; e.hop = ((EV.t - 4) / .42 + e.phase) % 1;
+    return true;
+  }
+  if (EV.kind === "macarena" && EV.t >= 13) { e.arms = null; e.bubble = "check"; }
+  if (EV.kind === "revolt" && !m.path.length && EV.t > 2) { m.dir = 6; e.hop = (EV.t * 1.6 + e.beat) % 1; return true; }
+  return false;
+}
+function evLoopLen(R, o){ return 2 * ((R.R - R.L - 2 * o) + (R.F - R.B - 2 * o)); }
+function evLoopPt(R, s, o){
+  const x0 = R.L + o, x1 = R.R - o, y0 = R.B + o, y1 = R.F - o, wl = x1 - x0, hl = y1 - y0, P = 2 * (wl + hl);
+  s = ((s % P) + P) % P;
+  if (s < wl) return {gx: x0 + s, gy: y0};
+  s -= wl; if (s < hl) return {gx: x1, gy: y0 + s};
+  s -= hl; if (s < wl) return {gx: x1 - s, gy: y1};
+  s -= wl; return {gx: x0, gy: y1 - s};
+}
+function evItems(t){
+  const out = [];
+  if (EV && EV.kind === "stampede") for (const a of EV.herd) if (a.alpha > 0) { const p = evLoopPt(a.R, a.s, a.o); out.push({d: p.gx + p.gy + .4, f: () => drawAnimal(a, p, t)}); }
+  if (decor === "city") for (const c of CITY.cars) if (c.knocked > 0 && c.pose) out.push({d: c.pose.gx + c.pose.gy + .6, f: () => {
+    const [x, y] = iso(c.pose.gx, c.pose.gy);
+    for (let i = 0; i < 3; i++) { const ph = ((t * .7 + i / 3) % 1); g.fillStyle = `rgba(90,94,104,${.55 * (1 - ph)})`; g.beginPath(); g.arc(x + Math.sin(t * 2 + i) * 1.5, y - 5 - ph * 9, 1.4 + ph * 2.2, 0, Math.PI * 2); g.fill(); }
+    if (Math.floor(t * 3) % 2) { g.fillStyle = "#ffb62e"; g.fillRect(x - 3, y - 3, 1, .8); g.fillRect(x + 2, y - 3, 1, .8); }
+  }});
+  return out;
+}
+function drawAnimal(a, p, t){
+  const q = evLoopPt(a.R, a.s + .3, a.o), [x, y0] = iso(p.gx, p.gy), [x2] = iso(q.gx, q.gy), f = x2 >= x ? 1 : -1;
+  const step = reduce ? 0 : Math.round(Math.sin(a.ph) * 1), bob = reduce ? 0 : Math.abs(Math.sin(a.ph)) * .8, y = y0 - bob;
+  g.save(); g.globalAlpha = a.alpha;
+  g.fillStyle = "rgba(0,0,0,.18)"; g.beginPath(); g.ellipse(x, y0 + .3, 6, 1.6, 0, 0, Math.PI * 2); g.fill();
+  const R = (dx, dy, w, h, c) => { g.fillStyle = c; g.fillRect(f > 0 ? x + dx : x - dx - w, y + dy, w, h); };
+  const legs = (xs, top, h, c) => xs.forEach((lx, i) => R(lx, top + ((i % 2 ? step : -step) > 0 ? .8 : 0), 1.4, h - ((i % 2 ? step : -step) > 0 ? .8 : 0), c));
+  if (a.kind === "elephant") {
+    legs([-5, -2.5, 1.5, 4], -4.5, 4.5, "#6f7682");
+    R(-6, -12, 12, 8, "#8d939e"); R(-6, -12, 12, 1.2, "#a5abb5");
+    R(4, -13, 5, 6, "#8d939e"); R(3, -12.5, 2.4, 5, "#767d89"); R(8, -8, 1.4, 6 + (step > 0 ? .6 : 0), "#8d939e"); R(7.4, -7, 1.8, .7, "#f4ecd8"); R(6.6, -11.5, .9, .9, "#1d2433");
+    R(-6.8, -11, .8, 3, "#767d89");
+  } else if (a.kind === "rhino") {
+    legs([-4.5, -2, 1.5, 3.5], -3.5, 3.5, "#5e554d");
+    R(-5.5, -9, 10, 6, "#7a6f66"); R(-5.5, -9, 10, 1, "#91857b");
+    R(4, -9, 4.5, 4, "#7a6f66"); R(7.8, -11, 1.2, 2.6, "#e8dcc0"); R(6.4, -10.6, .8, 1.4, "#e8dcc0"); R(5.5, -8.4, .8, .8, "#1d2433"); R(4.2, -10.3, 1, 1.4, "#91857b");
+  } else if (a.kind === "giraffe") {
+    legs([-3.5, -1.5, 1.5, 3], -7, 7, "#c98f35");
+    R(-4.5, -12, 9, 5, "#e8b04a"); R(2.6, -22, 2.2, 11, "#e8b04a"); R(2.4, -24, 5, 2.6, "#e8b04a"); R(3.2, -25.6, .6, 1.6, "#6b4a2f"); R(4.6, -25.6, .6, 1.6, "#6b4a2f"); R(5.6, -23.6, .7, .7, "#1d2433");
+    for (const [sx, sy] of [[-3.5, -11], [-1, -10], [1.5, -11.2], [-2.2, -8.6], [.6, -8.4], [3, -19], [3.2, -15.5]]) R(sx, sy, 1.4, 1.2, "#a0682a");
+  } else {
+    legs([-3.5, -1.5, 1.5, 3], -4, 4, "#23262d");
+    R(-4.5, -9, 9, 5, "#f4f4f4"); for (let i = 0; i < 4; i++) R(-3.8 + i * 2.1, -9, .8, 5, "#23262d");
+    R(3.6, -11, 3.2, 3.2, "#f4f4f4"); R(3.4, -11.6, 1.4, 1.6, "#23262d"); R(6.2, -9.4, .7, .7, "#1d2433"); R(-5.2, -8.6, .8, 3, "#23262d");
+  }
+  g.restore();
+}
+function evDrawExtras(m, x, x0, bw, top, t){
+  const e = m.ev; if (!e) return;
+  if (e.arms != null) { // macarena arms: both out, left up, right up, hands on hips
+    const ink = "#1d2433", pose = e.arms;
+    const arm = (side, up) => { const ax = side < 0 ? x0 - 2.6 : x0 + bw + .6; g.fillStyle = ink; if (up) g.fillRect(ax + (side < 0 ? 1 : 0), top - 1, 1.2, 4); else g.fillRect(ax, top + 4, 2, 1.1); };
+    arm(-1, pose === 1 || pose === 0); arm(1, pose === 2 || pose === 0);
+  }
+  if (e.sign) { // protest sign on a pole, pumped up and down
+    const pump = reduce ? 0 : Math.round(Math.abs(Math.sin((EV ? EV.t : 0) * 4 + (e.beat || 0) * 6)) * 2);
+    const px = x0 + bw + 1.2, py = top - 7 - pump;
+    g.fillStyle = "#8b5a3c"; g.fillRect(px, py, .9, 12);
+    g.save(); g.font = '2.6px "Press Start 2P", ui-monospace, monospace'; g.textBaseline = "middle"; g.textAlign = "center";
+    const w = Math.min(28, g.measureText(e.sign).width + 3);
+    g.fillStyle = "#1d2433"; g.fillRect(px - w/2 - .6, py - 4.6, w + 1.2, 5.2); g.fillStyle = "#fff8e8"; g.fillRect(px - w/2, py - 4, w, 4);
+    g.fillStyle = "#c2185b"; g.fillText(e.sign, px + .4, py - 1.9, w - 1.5); g.restore();
+  }
+}
+function drawBossHiding(t){
+  // the boss ducks behind the desk: just the top of his head and his shades peek out
+  const [cx, cy] = iso(18.9, 14.55), peek = reduce ? 0 : (Math.floor(t * .8) % 3 === 0 ? 1.5 : 0);
+  const [x, y] = iso(18.95, 15.2), hy = y - 12.5 - peek;
+  g.fillStyle = "#e9c46a"; g.fillRect(x - 3.5, hy - 2, 7, 2.5);
+  g.fillStyle = "#e7b48f"; g.fillRect(x - 3, hy, 6, 1.6 + peek);
+  if (peek) { g.fillStyle = "#1d2433"; g.fillRect(x - 2.6, hy + .6, 2.2, 1); g.fillRect(x + .4, hy + .6, 2.2, 1); }
+  BOSS_POS = [x, hy - 3];
+  if (!reduce && Math.floor(t * 2) % 2) { g.fillStyle = "#ffffff"; g.fillRect(x + 5, hy - 3, 3.2, 3); g.fillStyle = "#1d2433"; g.fillRect(x + 5.6, hy - 1.8, .5, .5); g.fillRect(x + 6.4, hy - 1.8, .5, .5); g.fillRect(x + 7.2, hy - 1.8, .5, .5); }
+}
+// toolbar menu
+function evMenuInit(){
+  const btn = document.getElementById("zEv"), menu = document.getElementById("evMenu");
+  if (!btn || !menu) return;
+  btn.onclick = ev => { ev.stopPropagation(); menu.hidden = !menu.hidden; };
+  menu.addEventListener("click", ev => { const b = ev.target.closest("[data-ev]"); if (!b) return; menu.hidden = true; evStart(b.dataset.ev); });
+  document.addEventListener("click", ev => { if (!menu.hidden && !menu.contains(ev.target) && ev.target !== btn) menu.hidden = true; });
+}
+setTimeout(evMenuInit, 0);
+/* =================== end of city events =================== */
 function drawHighTable(b){
   const [top, left, right] = b.col, z = b.top0;
   // pedestal legs
@@ -1975,7 +2159,7 @@ function drawPinball(t){
 }
 const BUBBLE = {office:"⌨️", ceo:"❗", cafeteria:"👀", repair:"💥", planning:"💭", playground:null, reports:null};
 function draw(t){
-  g.setTransform(RES, 0, 0, RES, 0, 0);
+  g.setTransform(RES, 0, 0, RES, EVSHAKE.x * RES, EVSHAKE.y * RES);
   // backdrop
   const dk = darkness(), night = dk / .66, city = decor === "city";
   let sky = night > .5 ? "#141a2b" : night > 0 ? "#3c5277" : "#8ccbf0";
@@ -2013,6 +2197,7 @@ function draw(t){
   for (const m of crew.values()) items.push({d: m.gx + m.gy + (m.sit ? 0 : .02), f: () => drawHelper(m, t)});
   items.push(...signItems(t, counts));
   items.push(billboardItem(t));
+  if (EV || decor === "city") items.push(...evItems(t));
   if (ACAD()) items.push(...acadItems(t));
   if (city) items.push(...cityItems(t, night > .5));
   items.push({d: 1e6 - 1, f: () => {}});
