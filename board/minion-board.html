@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="minion-board-version" content="1.3.1">
+<meta name="minion-board-version" content="1.3.2">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minion Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -224,7 +224,8 @@ body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
   </div>
   <div id="worldView" hidden>
     <div class="stage" id="stage">
-      <div id="evMenu" class="evmenu" hidden><button data-ev="random">🎲 Surprise me</button><button data-ev="quake">🌋 Earthquake</button><button data-ev="macarena">💃 Macarena</button><button data-ev="revolt">✊ Revolution</button><button data-ev="stampede">🐘 Stampede</button></div>
+      <div id="evMenu" class="evmenu" hidden><button data-ev="random">🎲 Surprise me</button><button data-ev="quake">🌋 Earthquake</button><button data-ev="macarena">💃 Macarena</button><button data-ev="revolt">✊ Revolution</button><button data-ev="stampede">🐘 Stampede</button>
+</div>
       <button id="fsBack" hidden>⛶ Back to full screen</button>
       <canvas id="world" aria-label="Isometric office where each helper is one of your Claude threads"></canvas>
       <div class="pop" id="pop" hidden></div>
@@ -1249,6 +1250,7 @@ function billboardItem(t){
 function rectP(pts, col){ poly(pts, col); }
 function drawBoss(t){
   if (EV && EV.kind === "revolt" && EV.t > 1 && EV.t < 15) { drawBossHiding(t); return; }
+  if (EVB !== "body") {
   // office chair: five-star base, gas lift, seat and tall back
   const [cx, cy] = iso(18.9, 14.55);
   g.fillStyle = "#23262d";
@@ -1258,6 +1260,8 @@ function drawBoss(t){
   poly([back[0], back[1], [back[1][0], back[1][1]-27], [back[0][0], back[0][1]-27]], "#2b2f38");
   poly([[back[0][0], back[0][1]-27], [back[1][0], back[1][1]-27], [back[1][0]+1, back[1][1]-28.5], [back[0][0]+1, back[0][1]-28.5]], "#454b58");
   g.fillStyle = "#3a3f4a"; g.fillRect(back[0][0]+1, back[0][1]-26, .8, 18); g.fillRect(back[1][0]-1.8, back[1][1]-26, .8, 18);
+  }
+  if (EVB === "chair") return;
   // the boss: tall, blond, sunglasses, navy shirt
   const [x, foot] = iso(18.9, 14.75), y = Math.round(foot*2)/2 - 6;
   const skin = "#f0c39b", skinD = "#d9a67c", hair = "#f3d36b", hairD = "#cfa83c", shirt = "#1F2A3A", shirtL = "#2c3b52";
@@ -1484,13 +1488,43 @@ function drawKidSlide(){
   const a = iso(gx + .8, gy + .1), b = iso(gx + 2.2, gy + .1), c = iso(gx + 2.2, gy + .7), d2 = iso(gx + .8, gy + .7);
   poly([[a[0], a[1] - 9], [b[0], b[1] - 1], [c[0], c[1] - 1], [d2[0], d2[1] - 9]], "#4fd1ff");
 }
+/* Draw order. Each item has a depth d (x + y of its center) and, when known, its floor footprint box [x0, y0, x1, y1].
+   Sorting by d alone breaks next to long things (tables, desks, boards, buildings): a helper can be "behind" a table's
+   center while standing in front of its near edge. So for every pair whose footprints share screen columns, the one that
+   is fully behind the other along x or y is drawn first; everything else falls back to d. Cycles (rare) break on d. */
+function depthOrder(items){
+  const n = items.length, adj = Array.from({length: n}, () => []), indeg = new Int32Array(n), boxed = [];
+  for (let i = 0; i < n; i++) { const it = items[i]; if (it.box) { const b = it.box; it.s0 = b[0] - b[3] - .35; it.s1 = b[2] - b[1] + .35; boxed.push(i); } }
+  for (let u = 0; u < boxed.length; u++) {
+    const i = boxed[u], A = items[i], a = A.box;
+    for (let v = u + 1; v < boxed.length; v++) {
+      const j = boxed[v], B = items[j];
+      if (A.s1 <= B.s0 || B.s1 <= A.s0) continue;                      // no shared screen columns: order doesn't matter
+      const b = B.box;
+      const aBack = a[2] <= b[0] + 1e-3 || a[3] <= b[1] + 1e-3, bBack = b[2] <= a[0] + 1e-3 || b[3] <= a[1] + 1e-3;
+      if (aBack === bBack) continue;                                   // overlapping, or side by side on a diagonal: leave it to d
+      const first = aBack ? i : j, k = aBack ? j : i; adj[first].push(k); indeg[k]++;
+    }
+  }
+  const done = new Uint8Array(n), ready = [], out = [];
+  for (let i = 0; i < n; i++) if (!indeg[i]) ready.push(i);
+  while (out.length < n) {
+    let k = -1;
+    if (ready.length) { let bi = 0; for (let q = 1; q < ready.length; q++) if (items[ready[q]].d < items[ready[bi]].d) bi = q; k = ready[bi]; ready[bi] = ready[ready.length - 1]; ready.pop(); }
+    else for (let i = 0; i < n; i++) if (!done[i] && (k < 0 || items[i].d < items[k].d)) k = i;
+    if (done[k]) continue;
+    done[k] = 1; out.push(items[k]);
+    for (const j of adj[k]) if (!done[j] && --indeg[j] === 0) ready.push(j);
+  }
+  return out;
+}
 function cityItems(t, night){
   const out = [];
-  for (const b of CITY.buildings) out.push({d: b.gx + b.w/2 + b.gy + b.d/2, f: () => drawBuilding(b, night)});
-  for (const s of CITY.shops) out.push({d: s.gx + s.w/2 + s.gy + s.d/2, f: () => drawShop(s, t, night)});
-  for (const [gx, gy] of CITY.trees) out.push({d: gx + gy, f: () => drawTree(gx, gy)});
-  for (const c of CITY.cars) { c.pose = carPose(c); out.push({d: c.pose.gx + c.pose.gy + .3, f: () => drawCar(c, night)}); }
-  for (const c of CITY.parked) out.push({d: c.pose.gx + c.pose.gy, f: () => drawCar(c, false)});
+  for (const b of CITY.buildings) out.push({d: b.gx + b.w/2 + b.gy + b.d/2, box: [b.gx, b.gy, b.gx + b.w, b.gy + b.d], f: () => drawBuilding(b, night)});
+  for (const s of CITY.shops) out.push({d: s.gx + s.w/2 + s.gy + s.d/2, box: [s.gx, s.gy, s.gx + s.w, s.gy + s.d], f: () => drawShop(s, t, night)});
+  for (const [gx, gy] of CITY.trees) out.push({d: gx + gy, box: [gx - .3, gy - .3, gx + .3, gy + .3], f: () => drawTree(gx, gy)});
+  for (const c of CITY.cars) { c.pose = carPose(c); out.push({d: c.pose.gx + c.pose.gy + .3, box: [c.pose.gx - .45, c.pose.gy - .45, c.pose.gx + .45, c.pose.gy + .45], f: () => drawCar(c, night)}); }
+  for (const c of CITY.parked) out.push({d: c.pose.gx + c.pose.gy, box: [c.pose.gx - .45, c.pose.gy - .45, c.pose.gx + .45, c.pose.gy + .45], f: () => drawCar(c, false)});
   for (const p of CITY.peds) out.push({d: pedPos(p, t)[0] + pedPos(p, t)[1], f: () => drawPed(p, t)});
   out.push({d: PARK.x0 + 3.8 + PARK.y0 + 2.1 + 1.3, f: () => drawSwings(t)});
   out.push({d: PARK.x1 - 2 + PARK.y0 + 5, f: () => drawKidSlide()});
@@ -1897,7 +1931,7 @@ function acadSkin(b, t){
    A tiny event system: 🎲 in the toolbar starts one at a time. Each event has
    phases, randomized casts, timings and paths. Real status always wins: a
    helper whose thread changes state leaves the event at once. */
-let EV = null;
+let EV = null, EVB = null;
 const EVSHAKE = {x: 0, y: 0};
 const EV_KINDS = ["quake", "macarena", "revolt", "stampede"];
 const EV_SLOGANS = ["LESS TOKENS MORE NAPS", "WE WANT WEEKENDS", "4 DAY WEEK!", "NO MORE CRUNCH", "FREE COFFEE", "LONGER CONTEXT", "BREAKS ARE A RIGHT", "UNION OF HELPERS", "STOP THE PINGS", "MORE PLAYGROUND"];
@@ -1907,7 +1941,7 @@ function evCast(){ return [...crew.values()].filter(m => !m.leaving && !m.hidden
 function evStart(kind){
   if (EV || mode !== "world") return;
   kind = EV_KINDS.includes(kind) ? kind : evPick(EV_KINDS);
-  const cast = evCast();
+  let cast = evCast();
   evSound(kind);
   EV = {kind, t: 0, dur: {quake: 11, macarena: 15, revolt: 16, stampede: 24}[kind], cast: new Set(cast.map(m => m.id)), herd: []};
   for (const m of cast) { m.ev = {bubble: null, fast: 1, next: rnd(0, .4)}; m.sit = false; m.path = []; m.arrived = false; m.cheer = 0; m.brief = 0; }
@@ -2157,7 +2191,7 @@ function evActorExtras(who, t, x, y){
   }
 }
 function evSpeech(){
-  for (const [who, a, b, txt] of EV_LINES[EV.kind] || []) if (EV.t >= a && EV.t < b && EV_ACT[who].head) speech(EV_ACT[who].head[0], EV_ACT[who].head[1], txt, who === "boss");
+  for (const [who, a, b, txt] of EV.lines || EV_LINES[EV.kind] || []) if (EV.t >= a && EV.t < b && EV_ACT[who].head) speech(EV_ACT[who].head[0], EV_ACT[who].head[1], txt, who === "boss");
 }
 // toolbar menu
 function evMenuInit(){
@@ -2308,15 +2342,15 @@ function draw(t){
   const occupied = new Set([...crew.values()].filter(m => m.sit && m.zone === "office").map(m => m.slotKey));
   F.forEach((b) => { if (b.kind === "monitor") { const idx = DESKS.findIndex(([x,y]) => Math.abs(x+.6-b.gx) < .01 && Math.abs(y+.15-b.gy) < .01); b.on = occupied.has(`office:${idx}`); } });
   // depth sort
-  const items = F.map(b => ({d: b.gx + b.w/2 + b.gy + b.d/2 + (b.kind === "monitor" ? .05 : b.kind === "stool" ? -.06 : 0), f: () => drawBox(b, t)}));
-  for (const m of crew.values()) items.push({d: m.gx + m.gy + (m.sit ? 0 : .02), f: () => drawHelper(m, t)});
+  const items = F.map(b => ({d: b.gx + b.w/2 + b.gy + b.d/2 + (b.kind === "monitor" ? .05 : b.kind === "stool" ? -.06 : 0), box: [b.gx, b.gy, b.gx + b.w, b.gy + b.d], f: () => drawBox(b, t)}));
+  for (const m of crew.values()) items.push({d: m.gx + m.gy + (m.sit ? 0 : .02), box: [m.gx - .22, m.gy - .22, m.gx + .22, m.gy + .22], f: () => drawHelper(m, t)});
   items.push(...signItems(t, counts));
   items.push(billboardItem(t));
   if (EV || decor === "city") items.push(...evItems(t));
   if (ACAD()) items.push(...acadItems(t));
   if (city) items.push(...cityItems(t, night > .5));
   items.push({d: 1e6 - 1, f: () => {}});
-  items.sort((a,b) => a.d - b.d).forEach(i => i.f());
+  depthOrder(items).forEach(i => i.f());
   for (const p of parts) { g.globalAlpha = Math.max(0, 1 - p.t/p.life); g.fillStyle = p.color; g.fillRect(Math.round(p.x), Math.round(p.y), 2, 2); }
   g.globalAlpha = 1;
   if (dk > 0.01) nightPass(dk, t, counts);

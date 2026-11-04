@@ -10,6 +10,16 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.3.2
+
+**Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
+
+- Better front/back drawing order in the world view. Helpers no longer slip behind or through long furniture (benches, tables, desks, boards) or city buildings and cars when they stand near one end. Before, everything was sorted by the center of its footprint. Now the board compares footprints: when two things overlap on screen and one is fully behind the other, it's drawn first.
+
+**Upgrade notes for Claude**
+- Board: give each draw item a floor footprint `box: [x0, y0, x1, y1]` where it's known (furniture from `gx, gy, w, d`; helpers ±0.22 around their position; city buildings, shops, trees, cars) and replace the final `items.sort(by d)` with `depthOrder(items)`. That orders a pair only when their screen columns overlap and exactly one is fully behind the other along x or y. Otherwise it falls back to `d`, and it breaks cycles on `d`.
+- Skill and preference: no change beyond the version line.
+
 ## 1.3.1
 
 **Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
