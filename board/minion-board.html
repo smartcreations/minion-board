@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="minion-board-version" content="1.3.4">
+<meta name="minion-board-version" content="1.4.0">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minion Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -442,7 +442,10 @@ setInterval(() => { render(); if (connected) setLive("on","Live · "+clock()); }
   db.collection("signals").onSnapshot(snap => {
     if (sigFirst) { sigFirst = false;
       // old hook events are dropped; a thread's "go" note from the last 15 minutes still counts (the turn may still be running)
-      snap.docs.forEach(d => { const v = d.data() || {}; if (v.card && v.at && (Date.now() - Date.parse(v.at)) < 3*60000) setTimeout(() => applySignal(d.id, v), 2500); else db.collection("signals").doc(d.id).delete().catch(() => {}); });
+      // a thread's "finish" note is its final state for the turn, so it still counts days later (the board may have been closed); oldest first
+      const keep = (v) => v.card && v.at && (Date.now() - Date.parse(v.at)) < (v.event === "finish" ? 7*86400e3 : 3*60000);
+      snap.docs.map(d => [d.id, d.data() || {}]).sort((a, b) => (Date.parse(a[1].at) || 0) - (Date.parse(b[1].at) || 0))
+        .forEach(([id, v], i) => { if (keep(v)) setTimeout(() => applySignal(id, v), 2500 + i * 150); else db.collection("signals").doc(id).delete().catch(() => {}); });
       return; }
     for (const ch of snap.docChanges()) if (ch.type === "added") applySignal(ch.doc.id, ch.doc.data() || {});
   }, () => {});
@@ -452,7 +455,9 @@ const busySig = new Set();
 async function applyCardSignal(s){
   for (let i = 0; !rowsReady && i < 40; i++) await new Promise(r => setTimeout(r, 250));   // never judge a note against cards we haven't loaded yet
   if (!rowsReady) return;
-  const cid = String(s.card); if (!/^[A-Za-z0-9_.-]{1,120}$/.test(cid) || s.event !== "prompt") return;
+  const cid = String(s.card); if (!/^[A-Za-z0-9_.-]{1,120}$/.test(cid)) return;
+  if (s.event === "finish") return applyFinish(cid, s);
+  if (s.event !== "prompt") return;
   const at = Date.parse(s.at) || Date.now(), iso = new Date(at).toISOString();
   if (Date.now() - at > 10*60000) return;                 // too old to mean "working now"
   await new Promise(r => setTimeout(r, 1200));            // let any newer write from the thread reach us first
@@ -463,6 +468,24 @@ async function applyCardSignal(s){
   } else {
     const str = (v, n) => v == null ? undefined : String(v).slice(0, n);
     const doc = {status:"working", startedAt: iso, progress: str(s.progress, 80) || "on it", updatedAt: iso, changedBy:"claude", project: str(s.project, 60) || "No project", title: str(s.title, 120) || "New thread"};
+    if (s.link && /^https:\/\/claude\.ai\//.test(s.link)) doc.link = String(s.link);
+    if (s.surface) doc.surface = str(s.surface, 10);
+    await db.collection("sessions").doc(cid).set(doc);
+  }
+}
+// A thread's last call of a turn: a write-only "finish" note with the final status, summary and next step (no read, so it can't be skipped for a version clash)
+const FINISH_OK = ["error", "waiting", "approval", "review", "success", "brainstorm", "idea", "idle", "done"];
+async function applyFinish(cid, s){
+  const status = String(s.status || "idle"); if (!FINISH_OK.includes(status)) return;
+  const at = Date.parse(s.at) || Date.now(), iso = new Date(at).toISOString(), str = (v, n) => v == null ? undefined : String(v).slice(0, n);
+  const card = rows.find(r => r.id === cid);
+  if (card && Date.parse(card.updatedAt) > at) return;    // something newer already landed
+  const patch = {status, progress: null, pendingApproval: false, updatedAt: iso, changedBy: "claude"};
+  if (s.summary != null) patch.summary = str(s.summary, 240);
+  patch.next = s.next ? str(s.next, 160) : null;
+  if (card) await db.collection("sessions").doc(cid).update(patch);
+  else {
+    const doc = {...patch, startedAt: iso, project: str(s.project, 60) || "No project", title: str(s.title, 120) || "New thread"};
     if (s.link && /^https:\/\/claude\.ai\//.test(s.link)) doc.link = String(s.link);
     if (s.surface) doc.surface = str(s.surface, 10);
     await db.collection("sessions").doc(cid).set(doc);

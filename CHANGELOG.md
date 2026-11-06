@@ -10,6 +10,18 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.4.0
+
+**Files:** `board/minion-board.html`, `skill/SKILL.md`, and the preference line in `setup/START-HERE.md`
+
+- New **finish note**. A thread now ends its turn with one write-only note, `signals/<card-id>-end-<unix>` with `event: "finish"`, its final status, a summary and the next step. The board turns it into the card update. Before, the end of a turn needed a read plus a versioned merge, which threads often skipped or got wrong on a version clash. The board also applies finish notes that waited while it was closed (up to 7 days), oldest first, and ignores any that are older than the card's last update.
+- The skill now uses the go note at the start and the finish note at the end of every turn. Claude Code sessions with hooks keep their read-and-merge end-of-turn write.
+
+**Upgrade notes for Claude**
+- Board: in `applyCardSignal`, send `event: "finish"` notes to a new `applyFinish(cid, s)`. It updates or creates the card with `status`, `summary` and `next`, sets `progress: null` and `pendingApproval: false`, and skips the note if the card was updated after the note's `at`. When the board loads, keep `finish` notes up to 7 days old (other notes keep the 3-minute window) and apply them oldest first.
+- Skill: replace the "Last tool call" step with the finish note, and add "The finish note" section and its example. Keep the user's own edits.
+- Preference: update the user's preference line to the new two-note version from `setup/START-HERE.md`, and show them the new text to paste in Settings.
+
 ## 1.3.4
 
 **Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)

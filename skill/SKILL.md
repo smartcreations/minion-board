@@ -1,11 +1,11 @@
 ---
 name: "session-board"
-description: "ALWAYS use at the start and at the end of EVERY turn, in every thread: send the board go note as the very first tool call, and update this thread's card status as the very last step. Also before commands that may need permission."
+description: "ALWAYS use at the start and at the end of EVERY turn, in every thread: send the board go note as the very first tool call and the finish note as the very last one. Also before commands that may need permission."
 ---
 
 # Minion Board (session board)
 
-Minion Board skill, version 1.3.4. Keep this line: the update prompt reads it.
+Minion Board skill, version 1.4.0. Keep this line: the update prompt reads it.
 
 the user keeps one live board of all their Claude threads across Projects, Cowork and Claude Code. Each thread keeps its own card up to date. The board has two views: project columns, and an isometric "world" where each thread is a named little helper that walks between rooms by status (planning, workshop, their office, report desk, cafeteria, playground, triage). Tapping a card or helper opens its thread, so every card needs a `link` (or, for Claude Code sessions, a `ccSession`) whenever one can be found.
 
@@ -21,7 +21,7 @@ Nothing is backfilled. A thread gets its card the first time the user takes a tu
 
 - Artifact slug: `BOARD_SLUG`
 - Board URL: BOARD_URL
-- Collection: `sessions`. There is one document per thread: `sessions/<card-id>`. The `signals` collection holds small one-off notes the open board applies and deletes: the Claude Code hooks write there, and so does your go note (see "The go note"). Never edit or delete other notes there.
+- Collection: `sessions`. There is one document per thread: `sessions/<card-id>`. The `signals` collection holds small one-off notes the open board applies and deletes: the Claude Code hooks write there, and so do your go note and finish note (see "The go note" and "The finish note"). Never edit or delete other notes there.
 - Tools: `mcp__claude-artifacts__db_get`, `db_query`, `db_write`. If they're deferred, load them with ToolSearch in a single call (`select:mcp__claude-artifacts__db_get,mcp__claude-artifacts__db_query,mcp__claude-artifacts__db_write`).
 - If those tools aren't available in this session, skip the board quietly. Mention it once at most, not every turn.
 
@@ -65,7 +65,7 @@ The app can pause a turn to ask the user "Allow once" before a command runs. You
 
 1. **Flag before every step that may prompt.** Right before a shell command (Bash), or any other tool call that has needed their permission in this thread, write to your card: `pendingApproval: true`, `pendingSince: <now>`, `pendingStep: "<a few words, e.g. the render command>"`, `updatedAt: <now>`, keeping `status: "working"`. Assume shell commands prompt unless the user has told you this thread runs them without asking. File edits through the Edit or Write tools and connector calls usually don't prompt; don't flag them unless you've seen otherwise.
 2. **The board does the rest.** If the flag is still set 20 seconds later, the board shows "Needs your OK" in pink and their helper walks to their office. If they approve quickly, nothing visible happens.
-3. **Clear it.** In your next board write after the step returns, set `pendingApproval: false` (or flag the next step with a fresh `pendingSince`). Always clear it at the end of the turn.
+3. **Clear it.** In your next board write after the step returns, set `pendingApproval: false` (or flag the next step with a fresh `pendingSince`). The finish note clears it at the end of the turn.
 4. **Group steps.** Prefer one combined command over several small ones, so they approve once and you write once.
 5. **Heartbeat.** While `working`, refresh `updatedAt` (and `progress`) at least every 3 minutes of activity. The board treats a `working` card with no update for 4 minutes as "Check on it" and moves it to their office.
 6. **Blockers mid-turn.** If you hit anything mid-turn that needs them, switch to `waiting` right away instead of waiting for the end of the turn.
@@ -109,7 +109,7 @@ When you have no earlier board write to look at (an old thread the user just reo
 | `project` | Short project name as the user would say it: "Website", "Side project", "Home admin", "Claude setup". Use the Claude Project's name when there is one, spelled the same way every time: the board makes one column and one helper color per exact name. For Claude Code, replace the hooks' folder-name placeholder with the real project name. |
 | `title` | The session's own name if it has one (see above), else a distinctive 3 to 7 word title. |
 | `status` | One of the statuses above. |
-| `next` | One short line shown on the card, only for `error`, `waiting` and `review`: what failed, what you need from them, or what to look at. Remove it (`{"__delete__": true}`) for `idle`, `brainstorm`, `working` and `done`. |
+| `next` | One short line shown on the card, only for `error`, `waiting` and `review`: what failed, what you need from them, or what to look at. Remove it (`{"__delete__": true}`, or `null` in a finish note) for `idle`, `brainstorm`, `working` and `done`. |
 | `summary` | One line on what this turn did or found, including any optional suggestion. The board reads it out at the report desk. |
 | `progress` | Only while `working`: a short marker such as "step 3 of 6" or "running tests". Delete it when the turn ends. |
 | `pendingApproval`, `pendingSince`, `pendingStep` | The permission-prompt flag (see above). `pendingSince` is an ISO time (UTC). |
@@ -122,9 +122,9 @@ When you have no earlier board write to look at (an old thread the user just reo
 
 ## When to write
 
-1. **First tool call of every turn: the "go" note.** Before reading files, searching, thinking it through, or anything else, send the go note described in "The go note" below. It's a single write with no read first, so it lands in seconds. Do this on every turn, short or long, and above all when the user is answering a `waiting` or `review` card: on the board, that's the moment their helper gets its orders and leaves their office. Only skip it for a pure one-line reply with no tool calls at all, or in Claude Code sessions with hooks.
+1. **First tool call of every turn: the "go" note.** Before reading files, searching, thinking it through, or anything else, send the go note described in "The go note" below. It's a single write with no read first, so it lands in seconds. Do this on every turn, short or long, and above all when the user is answering a `waiting` or `review` card: on the board, that's the moment their helper gets its orders and leaves their office. Only skip it in Claude Code sessions with hooks.
 2. **During the turn.** In sessions without hooks, follow "Permission prompts" above. In all sessions, heartbeat at least every 3 minutes of activity and switch to `waiting` the moment you're blocked.
-3. **Last tool call of every turn.** Create the card if it doesn't exist; otherwise update it. Set the final status by the rules above (if you resolved the thread this turn, for example with `set_thread_resolved`, the final status is `done`, never `idle` or `review`, and `next` is removed), set or remove `next` to match, write a clear one-line `summary`, update `updatedAt`, delete `progress`, and set `pendingApproval: false`. Then give your reply.
+3. **Last tool call of every turn: the finish note.** Send the finish note described in "The finish note" below, with the final status by the rules above (if you resolved the thread this turn, for example with `set_thread_resolved`, the final status is `done`, never `idle` or `review`, and `next` is `null`), a clear one-line `summary`, and `next`. It's one write with no read, like the go note. Then give your reply. In Claude Code sessions with hooks, do the `db_get` + `merge` end-of-turn write instead (see "How to write"), because that card also needs `ccSession`, `cwd` and a real title.
 
 ## The go note
 
@@ -135,10 +135,21 @@ The go note flips the card to Working with one write and no read: it creates a s
 ```
 
 - `card`, `event` and `at` are required. Add `project`, `title`, `link` and `surface` when you know them; the board only uses them if the card doesn't exist yet.
-- Use the same card id rules as below. The `<unix seconds>` suffix keeps each note new, so `set` never collides.
+- Use the same card id rules as above. The `<unix seconds>` suffix keeps each note new, so `set` never collides.
 - If `db_write` is deferred, load it with ToolSearch in that same first step, then send the note right away.
-- The open board can apply your go note after your `db_get`, so the end-of-turn `merge` may come back `version_mismatch`. Read the card again and retry once.
-- The go note doesn't replace the end-of-turn write. Do the end-of-turn write with `db_get` and `merge` as usual. If the card doesn't exist yet at the end of the turn (the board wasn't open to create it), create it then with `set`.
+- The go note doesn't replace the end-of-turn write: finish the turn with the finish note below.
+
+## The finish note
+
+The finish note sets the card's final state for the turn with one write and no read, the same way as the go note. The board applies it (creating the card if needed) and deletes it. If the board isn't open, the note waits and is applied the next time it opens, for up to 7 days.
+
+```json
+{"slug": "BOARD_SLUG", "ops": [{"op": "set", "path": "signals/<card-id>-end-<unix seconds>", "data": {"card": "<card-id>", "event": "finish", "at": "<now, ISO UTC>", "status": "idle|review|waiting|brainstorm|error|done", "summary": "<one line>", "next": "<one line, or null>", "project": "<project>", "title": "<title>", "link": "<this thread's https://claude.ai/... link, if known>", "surface": "chat|cowork|code"}}]}
+```
+
+- `card`, `event`, `at`, `status` and `summary` are required. `next` only for `error`, `waiting` and `review`; otherwise `null`. `project`, `title`, `link` and `surface` are only used if the card doesn't exist yet.
+- Never skip it because the turn was short or the reply has no other tool calls.
+- To change a card's title, project or link later, use `db_get` + `merge` (see "How to write").
 
 ## How to write
 
@@ -153,6 +164,12 @@ First call of a turn, the user just answered a question (the go note, no read fi
 
 ```json
 {"slug": "BOARD_SLUG", "ops": [{"op": "set", "path": "signals/my-app--billing-page-refactor-go-1793642400", "data": {"card": "my-app--billing-page-refactor", "event": "prompt", "at": "2026-11-02T18:00:00Z", "progress": "applying their answer"}}]}
+```
+
+Last call of a turn (the finish note, no read first):
+
+```json
+{"slug": "BOARD_SLUG", "ops": [{"op": "set", "path": "signals/my-app--billing-page-refactor-end-1793642700", "data": {"card": "my-app--billing-page-refactor", "event": "finish", "at": "2026-11-02T18:05:00Z", "status": "review", "summary": "Billing page migrated; PR #212 open against dev", "next": "Review PR #212"}}]}
 ```
 
 End of turn in a Claude Code session with hooks:

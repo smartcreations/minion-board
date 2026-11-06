@@ -22,7 +22,7 @@ Set up Minion Board for me from https://github.com/smartcreations/minion-board. 
    - the board link
    - "Save the session-board skill on the card above"
    - this line, in a copy box, with BOARD_SLUG replaced by my board id, to paste into Settings, in the personal preferences field:
-     Every turn, before anything else, call mcp__claude-artifacts__db_write with slug BOARD_SLUG and one op: set "signals/<card-id>-go-<unix seconds>" with data {card: <card-id>, event: "prompt", at: <now, ISO UTC>}, where card-id is this thread's session or thread id (see the session-board skill). As the very last step of every reply, update this thread's card status using the session-board skill.
+     Session board, on EVERY turn, no exceptions (short replies and follow-ups included): 1. FIRST tool call: mcp__claude-artifacts__db_write (load it with ToolSearch first if it's deferred), slug BOARD_SLUG, one op: set "signals/<card-id>-go-<unix seconds>", data {card: <card-id>, event: "prompt", at: <now, ISO UTC>, title: <short thread title>, project: <project>}. 2. LAST tool call, before writing the reply: same tool and slug, one op: set "signals/<card-id>-end-<unix seconds>", data {card: <card-id>, event: "finish", at: <now, ISO UTC>, status: idle|review|waiting|brainstorm|error|done, summary: <one line>, next: <what you need from me, or null>}. 3. The reply's last line is "board: <status>", written only after step 2 succeeded; if it failed, "board: not updated". card-id: this thread's session or thread id (session_…, cmsg_…) if it appears anywhere in context, else <project-slug>--<title-slug>; keep the same id for the whole thread. No reads needed. The session-board skill has the status rules.
    - one tip: paste the same line into each Claude Project's instructions too, so it's in front of every thread twice.
    - one question: do I use Claude Code? If I say yes, give me the prompt from setup/3-claude-code-hooks.md
      with BOARD_SLUG already replaced by my board id, to paste into a Claude Code session on my computer.
@@ -30,7 +30,7 @@ Set up Minion Board for me from https://github.com/smartcreations/minion-board. 
 
 ## What happens next
 
-- Why the preference line spells out the exact first call: a thread that has to remember a skill skips it now and then, but a line in your preferences is in front of every turn. In Claude Code, the optional hooks make status exact no matter what.
+- Why the preference line spells out both calls: a thread that has to remember a skill skips it now and then, but a line in your preferences is in front of every turn. Both calls are single write-only notes, so there's nothing to read or retry, and the visible "board:" line at the end shows you at a glance whether the thread did it. In Claude Code, the optional hooks make status exact no matter what.
 
 - Every thread shows up on the board the next time you write in it. Nothing is backfilled: Claude can't list your past chats, so old threads join as you come back to them.
 - Open the board in a pinned tab or on your phone. Switch to **World** to see the helpers.
