@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="minion-board-version" content="1.3.2">
+<meta name="minion-board-version" content="1.3.3">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minion Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -811,7 +811,8 @@ function sync(){
     });
   }
   if (list.length) firstSync = false;
-  drawLegend(projects);
+  // the legend lists only projects that have a helper on the map right now (colors stay stable for all projects)
+  drawLegend(projects.filter(p => list.some(r => (r.project || "No project") === p && r.role !== "assistant" && zoneKey(r) !== "exit")));
   drawReports(list);
 }
 let focusProj = null;
@@ -1492,6 +1493,17 @@ function drawKidSlide(){
    Sorting by d alone breaks next to long things (tables, desks, boards, buildings): a helper can be "behind" a table's
    center while standing in front of its near edge. So for every pair whose footprints share screen columns, the one that
    is fully behind the other along x or y is drawn first; everything else falls back to d. Cycles (rare) break on d. */
+// furniture draw item; the assistant robot can leave its booth (to the report desk, or during an event), so it sorts where it actually is
+function botAt(){
+  if (typeof EV !== "undefined" && EV && EV.p && EV.p.R) return [EV.p.R.gx, EV.p.R.gy];
+  if (typeof ASST !== "undefined" && ASST && typeof ASST.gx === "number") return [ASST.gx, ASST.gy];
+  return null;
+}
+function furnItem(b, t){
+  const p = b.kind === "assistant" ? botAt() : null;
+  if (p) return {d: p[0] + p[1], box: [p[0] - .35, p[1] - .3, p[0] + .35, p[1] + .05], f: () => drawBox(b, t)};
+  return {d: b.gx + b.w/2 + b.gy + b.d/2 + (b.kind === "monitor" ? .05 : b.kind === "stool" ? -.06 : 0), box: [b.gx, b.gy, b.gx + b.w, b.gy + b.d], f: () => drawBox(b, t)};
+}
 function depthOrder(items){
   const n = items.length, adj = Array.from({length: n}, () => []), indeg = new Int32Array(n), boxed = [];
   for (let i = 0; i < n; i++) { const it = items[i]; if (it.box) { const b = it.box; it.s0 = b[0] - b[3] - .35; it.s1 = b[2] - b[1] + .35; boxed.push(i); } }
@@ -2342,7 +2354,7 @@ function draw(t){
   const occupied = new Set([...crew.values()].filter(m => m.sit && m.zone === "office").map(m => m.slotKey));
   F.forEach((b) => { if (b.kind === "monitor") { const idx = DESKS.findIndex(([x,y]) => Math.abs(x+.6-b.gx) < .01 && Math.abs(y+.15-b.gy) < .01); b.on = occupied.has(`office:${idx}`); } });
   // depth sort
-  const items = F.map(b => ({d: b.gx + b.w/2 + b.gy + b.d/2 + (b.kind === "monitor" ? .05 : b.kind === "stool" ? -.06 : 0), box: [b.gx, b.gy, b.gx + b.w, b.gy + b.d], f: () => drawBox(b, t)}));
+  const items = F.map(b => furnItem(b, t));
   for (const m of crew.values()) items.push({d: m.gx + m.gy + (m.sit ? 0 : .02), box: [m.gx - .22, m.gy - .22, m.gx + .22, m.gy + .22], f: () => drawHelper(m, t)});
   items.push(...signItems(t, counts));
   items.push(billboardItem(t));

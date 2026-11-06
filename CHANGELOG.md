@@ -10,6 +10,18 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.3.3
+
+**Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
+
+- The world view's project legend now lists only projects that have a helper on the map. Projects whose threads are all done or retired drop out of it, and come back as soon as one of their threads is active again. Project colors don't change.
+- The assistant robot is drawn in the right front/back order wherever it actually is, not only in its booth.
+
+**Upgrade notes for Claude**
+- Board: in `sync()`, pass `drawLegend` only the projects that have at least one card whose `zoneKey(r)` isn't `"exit"` (skip `role: "assistant"` cards). Keep computing `projColor` from all projects.
+- Board: build furniture draw items with `furnItem(b, t)`. For the `assistant` item, use the robot's live position (`botAt()`) for its depth and footprint box.
+- Skill and preference: no change beyond the version line.
+
 ## 1.3.2
 
 **Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
