@@ -10,6 +10,19 @@ Each release is a git tag (`v1.0.0`, `v1.1.0`, …), so the exact files of any v
 
 ---
 
+## 1.3.4
+
+**Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)
+
+- Clicking a helper opens one panel: the thread card with its actions as the card's footer. Before, the card and a separate "Thread deleted or finished?" box showed up as two pop-ups.
+- New action **☕ Back to the cafeteria** for any helper that isn't already there, for example one waiting in your office. It marks the card as handled (`success`, already read, so it doesn't land in Reports). **🚪 Retire** is still there.
+- Helpers in the cafeteria no longer show the 👀 bubble. Idea helpers keep their 💡.
+
+**Upgrade notes for Claude**
+- Board: in the canvas click handler, render `<div class="pcard">${card(r)}<div class="pact">…buttons…</div></div>` (add the `.pcard`/`.pact` CSS). In the pop-up click listener, handle `data-park` (update the card to `status:"success", changedBy:"board"` and call `markSeen`) next to `data-retire`.
+- Board: in `bubbleSpec`, return `null` for the cafeteria zone.
+- Skill and preference: no change beyond the version line.
+
 ## 1.3.3
 
 **Files:** `board/minion-board.html` (and the version line in `skill/SKILL.md`)

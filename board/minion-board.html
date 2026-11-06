@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="minion-board-version" content="1.3.3">
+<meta name="minion-board-version" content="1.3.4">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Minion Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -179,6 +179,11 @@ body.immersive .zoom{top:max(10px, env(safe-area-inset-top));right:10px}
 .retire{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding:8px 10px;background:#fff;color:#1d2433;border:2px solid #1d2433;border-radius:4px;font:13px "IBM Plex Sans",system-ui,sans-serif}
 .retire button{all:unset;cursor:pointer;padding:4px 10px;border:2px solid #1d2433;border-radius:3px;font-weight:600;box-shadow:0 2px 0 #1d2433;background:#ffd6d6}
 .pop .card{border-radius:0 10px 10px 0}
+.pop .pcard .card{border-radius:0 10px 0 0}
+.pact{display:flex;gap:6px;padding:8px 12px 10px;background:var(--surface);border:1px solid var(--line);border-top:1px dashed var(--line);border-left:4px solid var(--c);border-radius:0 0 10px 0}
+.pact button{all:unset;cursor:pointer;flex:1;text-align:center;padding:6px 4px;border:1px solid var(--line);border-radius:6px;font:600 12px var(--body);color:inherit;white-space:nowrap}
+.pact button:hover{border-color:var(--muted)}
+.pact button.ret{flex:0 0 auto;padding:6px 10px}
 .zoom{position:absolute;top:10px;right:10px;display:flex;gap:4px;z-index:1}
 .zoom button{all:unset;cursor:pointer;min-width:28px;height:28px;line-height:28px;padding:0 9px;text-align:center;border-radius:8px;background:rgba(20,24,34,.68);color:#fff;font:600 13px var(--body);backdrop-filter:blur(4px)}
 .zoom select{all:unset;cursor:pointer;height:28px;line-height:28px;padding:0 9px;border-radius:8px;background:rgba(20,24,34,.68);color:#fff;font:600 13px/28px var(--body);backdrop-filter:blur(4px)}
@@ -1737,7 +1742,7 @@ function bubbleSpec(m, t){
   if (st(r) === "idea") return "bulb";
   if (z === "ceo") return (st(r) === "approval" && !pendingStale(r) && !(mins(r.updatedAt) > QUIET_MIN) && !r.pendingApproval) ? "ask" : "ok";
   if (z === "office") return "kb";
-  if (z === "cafeteria") return "eyes";
+  if (z === "cafeteria") return null; // on a break: no bubble
   if (z === "repair") return "boom";
   if (z === "planning") return "cloud";
   if (z === "playground" && Math.floor(t/3 + hash(m.id)) % 4 === 0) return Math.floor(t + hash(m.id)) % 2 ? "zzz" : "note";
@@ -2487,9 +2492,13 @@ document.getElementById("pop").addEventListener("click", ev => {
   if (id) { if (g2) linkOpenedAt = Date.now(); markSeen(id); lastRep = ""; }
 });
 document.getElementById("pop").addEventListener("click", async ev => {
-  const b = ev.target.closest("[data-retire]"); if (!b) return;
+  const b = ev.target.closest("[data-retire],[data-park]"); if (!b) return;
   ev.stopPropagation();
-  try { await db.collection("sessions").doc(b.dataset.retire).update({status:"done", changedBy:"board", updatedAt:new Date().toISOString(), progress:null, next:null, pendingApproval:false}); } catch(e) {}
+  const id = b.dataset.retire || b.dataset.park, at = new Date().toISOString();
+  const patch = b.dataset.retire ? {status:"done", changedBy:"board", updatedAt:at, progress:null, next:null, pendingApproval:false}
+                                 : {status:"success", changedBy:"board", updatedAt:at, progress:null, pendingApproval:false};   // parked: the cafeteria, not a new report
+  try { await db.collection("sessions").doc(id).update(patch); } catch(e) {}
+  if (b.dataset.park) { markSeen(id); lastRep = ""; }
   document.getElementById("pop").hidden = true;
 });
 function pick(ev){
@@ -2586,7 +2595,10 @@ cv.addEventListener("click", ev => {
   const m = hit || pick(ev);
   if (!m) { pop.hidden = true; return; }
   if (m.targetZone === "reports" && m.arrived) { showReportChoice(m, ev); return; }
-  pop.innerHTML = card(m.r) + `<div class="retire"><span>Thread deleted or finished?</span><button type="button" data-retire="${esc(m.id)}">Retire</button></div>`;
+  // one panel: the thread card, with its actions as the card's footer
+  const s0 = st(m.r), look = s0 === "working" && (mins(m.r.updatedAt) > QUIET_MIN || pendingStale(m.r)) ? "approval" : s0;
+  const park = m.targetZone !== "cafeteria" ? `<button type="button" data-park="${esc(m.id)}" title="Mark it as handled for now: the helper goes back to the cafeteria">☕ Back to the cafeteria</button>` : "";
+  pop.innerHTML = `<div class="pcard">${card(m.r)}<div class="pact" style="--c:var(--${look})">${park}<button type="button" class="ret" data-retire="${esc(m.id)}" title="Thread deleted or finished? Send this helper home">🚪 Retire</button></div></div>`;
   if (isUnread(m.r)) setTimeout(() => { markSeen(m.id); lastRep = ""; }, 1500);
   const b = cv.getBoundingClientRect(), sb = document.getElementById("stage").getBoundingClientRect();
   let left = ev.clientX - sb.left + 12, top = ev.clientY - sb.top - 20;
